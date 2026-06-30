@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>expreli!</title>
+    <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+    <!-- Selection Box for selecting a race. Should default to display:none -->
+    <div class="selection-box">
+        <h2>Select a Race</h2>
+        <form class="inner-selection-box" id="race-select-form"></form>
+        <div class="selection-buttons">
+            <button id="selection-cancel">CANCEL</button>
+            <button id="selection-submit">SELECT RACE</button>
+        </div>
+    </div>
+
+    <!-- Main UI -->
+    <div class="main-ui" id="">
+        <h1></h1>
+        <section>
+            <div class="log-box">
+                <textarea id="log-info-box" rows="20" cols="80" readonly></textarea>
+                <div class="submission-box">
+                    <input id="command-input-box" type="text" placeholder="/help" />
+                    <button id="submit-cmd-btn">SUBMIT</button>
+                </div>
+            </div>
+            <div class="buttons">
+                <button id="select-upcoming-race-btn">SELECT UPCOMING RACE</button>
+                <button id="begin-race-btn">BEGIN RACE</button>
+                <button id="reset-race-btn">RESET RACE</button>
+                <button id="end-race-btn">FINISH RACE</button>
+            </div>
+        </section>
+    </div>
+    <script src="./js/ui.js"></script>
+    <script src="./js/logger.js"></script>
+    <script src="./js/api.js"></script>
+    <script src="./js/main.js"></script>
+</body>
+</html>
