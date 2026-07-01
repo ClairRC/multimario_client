@@ -71,6 +71,7 @@ h1 {
     border: none;
     width: 100%;
     padding: 30px;
+    margin: 10px;
     font-family: Arial, Helvetica, sans-serif;
     letter-spacing: 2px;
     font-size: 15px;
@@ -82,8 +83,8 @@ h1 {
     color: white;
     position: fixed;
     height: 75%;
-    min-height: 600px;
     min-width: 400px;
+    min-height: 600px;
     width: 50%;
     background-color: #505050;
     border-style: solid;

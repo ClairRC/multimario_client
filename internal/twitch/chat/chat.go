@@ -4,15 +4,31 @@ import (
 	"bufio"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/multimario_client/internal/twitch"
 )
 
+type TwitchClient struct {
+	userToken string
+	clientID string
+	conn *tls.Conn
+}
+
+var Client = TwitchClient{}
+
+func (c *TwitchClient) SetTwitchConnectionParams(userToken string, clientID string) {
+	Client.userToken = userToken
+	Client.clientID = clientID
+}
+
+func (c *TwitchClient) IsConnectedToTwitch() bool {
+	return c.conn != nil
+}
+
 //Connects to Twitch IRC and joins channel rooms. Returns TLS connection to Twitch IRC channel
-func ConnectToChat(userToken string, clientID string, targetRooms []string) error {
+func (c *TwitchClient) ConnectToChat(targetRooms []string, logChannel chan(string)) {
 	/*
 	* TODO: It is probably beneficial to at some point migrate to twitch's EventSub API for chat interfacing rather than IRC
 	* It might be worth it to wrap this function in some other function so that the architecture doesn't entirely
@@ -20,23 +36,26 @@ func ConnectToChat(userToken string, clientID string, targetRooms []string) erro
 	*/
 	conn, err := tls.Dial("tcp", "irc.chat.twitch.tv:6697", &tls.Config{})
 	if err != nil {
-		return err
+		logChannel <- err.Error()
+		return
 	}
+	c.conn = conn
 
 	//Get Twitch name from user token
-	userName, err := twitch.GetUserNameFromToken(userToken, clientID)
+	userName, err := twitch.GetUserNameFromToken(c.userToken, c.clientID)
 	if err != nil {
-		return err
+		logChannel <- err.Error()
+		return
 	}
 
 	//Connect to rooms
 	fmt.Fprintf(conn, "CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
-	fmt.Fprintf(conn, "PASS oauth:%s\r\n", userToken)
+	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.userToken)
 	fmt.Fprintf(conn, "NICK %s\r\n", userName)
 	
 	for _, name := range targetRooms {
 		//TODO: Add a check to make sure that this doesn't fail silently.
-		log.Printf("Attempting to connect to %s", name)
+		logChannel <- fmt.Sprintf("Attempting to connect to %s", name)
 		fmt.Fprintf(conn, "JOIN #%s\r\n", name)
 		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 	}
@@ -45,21 +64,19 @@ func ConnectToChat(userToken string, clientID string, targetRooms []string) erro
 	initCommands()
 
 	//After connecting, listen on this connection and return from this goroutine
-	go ListenToChat(conn)
-
-	return nil
+	go c.ListenToChat(logChannel)
 }
 
 //Listens to Twitch chat and creates a channel for writing
-func ListenToChat(conn *tls.Conn) {
-	log.Print("Listening to Twitch chat...")
+func (c *TwitchClient) ListenToChat(logChannel chan(string)) {
+	logChannel <- "Listening to Twitch chat..."
 
 	//Create write channel and begin goroutine for writes
 	writeC := make(chan(string))
-	go writeToConnection(conn, writeC)
+	go writeToConnection(c.conn, writeC)
 
 	//Create scanner for listening
-	scanner := bufio.NewScanner(conn)
+	scanner := bufio.NewScanner(c.conn)
 	for scanner.Scan() {
 		//Get message from Twitch chat
 		line := scanner.Text()
@@ -67,6 +84,16 @@ func ListenToChat(conn *tls.Conn) {
 		//Parse Twitch line in a new goroutine
 		go ParseLine(line, writeC)
 	}
+}
+
+//Disconnects from twitch chat
+func (c *TwitchClient) DisconnectFromChat(logChannel chan(string)) error {
+	logChannel <- "Disconnecting from Twitch Chat..."
+
+	err := c.conn.Close()
+	c.conn = nil
+
+	return err
 }
 
 //Takes a line of text and parses it

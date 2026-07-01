@@ -1,4 +1,5 @@
 {
     "twitch_client_id": "Twitch client ID",
-    "twitch_client_secret": "Twitch client secret"
+    "twitch_client_secret": "Twitch client secret",
+    "multimario_api_key": "API Key from backend"
 }
