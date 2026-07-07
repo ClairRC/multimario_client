@@ -67,7 +67,7 @@ func GetCompletedRaces() ([]RaceInfo, error) {
 	return getRacesFromStatus("completed")
 }
 
-func GetTwitchChannelsForRace(raceID int) ([]string, error) {
+func GetPlayersForRace(raceID int) ([]RecordInfo, error) {
 	endpoint := fmt.Sprintf("%s%s/records?race_id=%v", ip, port, raceID)
 	req, err := http.NewRequest("GET", endpoint , nil)
 	if err != nil {
@@ -135,13 +135,7 @@ func GetTwitchChannelsForRace(raceID int) ([]string, error) {
 		nextPage = recordResponse.Meta.NextPage
 	}
 
-	//Get output names
-	out := make([]string, 0)
-	for _, record := range recordsArr {
-		out = append(out, record.PlayerTwitch)
-	}
-
-	return out, nil
+	return recordsArr, nil
 }
 
 //Helper for getting races based on status
@@ -217,6 +211,41 @@ func getRacesFromStatus(status string) ([]RaceInfo, error) {
 	}
 
 	return out, nil
+}
+
+//Gets race info from a specified race
+func GetRaceFromID(raceID int) (*RaceInfo, error) {
+	endpoint := fmt.Sprintf("%s/races?race_id=%v", ip+port, raceID)
+	req, err := http.NewRequest("GET", endpoint, nil)
+
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+
+	//Parse response into JSON
+	raceResponse := RaceRes{}
+	json.NewDecoder(resp.Body).Decode(&raceResponse)
+
+	if !raceResponse.Success {
+		return nil, errors.New(raceResponse.Error)
+	}
+
+	if len(raceResponse.Races) == 0 {
+		return nil, errors.New("no race exists with this id")
+	}
+
+	return &raceResponse.Races[0], nil
 }
 
 func GetInProgressRace() (*RaceInfo, error) {

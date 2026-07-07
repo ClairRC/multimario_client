@@ -149,3 +149,14 @@ async function connectedToTwitch() {
 
     return result.connected
 }
+
+async function selectRace(raceID) {
+    //Send request to connect
+    const response = await fetch(`/api/select_race?race_id=${raceID}`, {method: 'POST'})
+
+    const result = await response.json()
+    if (!result.success) {
+        logError(`Unable to select Race: ${result.error}`)
+        return
+    }
+}

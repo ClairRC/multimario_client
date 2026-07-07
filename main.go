@@ -7,6 +7,7 @@ import (
 
 	"github.com/multimario_client/internal/controlpanel"
 	"github.com/multimario_client/internal/mmapi"
+	"github.com/multimario_client/internal/stats"
 	"github.com/multimario_client/internal/twitch/auth"
 	"github.com/multimario_client/internal/twitch/chat"
 )
@@ -17,13 +18,14 @@ type Settings struct {
 	TwitchClientID string `json:"twitch_client_id"`
 	TwitchClientSecret string `json:"twitch_client_secret"`
 	MMAPIKey string `json:"multimario_api_key"`
+	Layout string `json:"layout"`
 }
 
 func main() {
 	//Load settings
 	settings, err := loadSettings(settingsPath)
 	if err != nil {
-		log.Fatalf("unable to load twitch api information from %s", settingsPath)
+		log.Fatalf("unable to load twitch api information from %s: %s", settingsPath, err.Error())
 	}
 	mmapi.SetMultiMarioAPIParams("http://localhost", ":3000", settings.MMAPIKey)
 
@@ -37,7 +39,8 @@ func main() {
 	chat.Client.SetTwitchConnectionParams(token, settings.TwitchClientID)
 
 	//Initialize control panel
-	controlpanel.InitControlPanel()
+	go controlpanel.InitControlPanel()
+	stats.InitStatsPage(settings.Layout)
 }
 
 func loadSettings(settingsPath string) (*Settings, error) {

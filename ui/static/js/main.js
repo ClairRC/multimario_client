@@ -57,6 +57,7 @@ async function handleSelectUpcomingRaceButton(event) {
         }
         else {
             selectedRace = raceMap.get(selectedRaceOption)
+            selectRace(selectedRace.id)
         }
         updateUI()
         hideSelectionBox()
@@ -103,6 +104,7 @@ async function handleSelectPastRaceButton(event) {
         }
         else {
             selectedRace = raceMap.get(selectedRaceOption)
+            selectRace(selectedRace.id)
         }
         updateUI()
         hideSelectionBox()

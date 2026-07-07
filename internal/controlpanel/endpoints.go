@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/multimario_client/internal/mmapi"
+	"github.com/multimario_client/internal/stats"
 	"github.com/multimario_client/internal/twitch/chat"
 )
 
@@ -141,7 +142,14 @@ func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//After we have the raceID, get a list of twitch channels from the backend
-	twitchChannels, err := mmapi.GetTwitchChannelsForRace(raceID)
+	playerRecords, err := mmapi.GetPlayersForRace(raceID)
+
+	//We only need the channel names, so convert them into a string array 
+	twitchChannels := make([]string, 0)
+	for _, record := range playerRecords {
+		twitchChannels = append(twitchChannels, record.PlayerTwitch)
+	}
+
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -151,6 +159,42 @@ func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
 
 	//Connect to chat
 	chat.Client.ConnectToChat(twitchChannels, logC)
+}
+
+/*
+* POST
+* Takes race_id in URL
+*/
+
+//Function that takes race information and then passes that along to the stats stream
+func selectRace(w http.ResponseWriter, r *http.Request) {
+	//Gets value from URL
+	urlIDs := r.URL.Query()["race_id"]
+	if len(urlIDs) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": "missing race id"})
+		return
+	}
+
+	//This endpoint will only accept 1 race, so throw out the rest
+	raceID, err := strconv.Atoi(urlIDs[0])
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
+	//Start race on stats stream
+	err = stats.StartTrackingRace(raceID, "00:00:00", false)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		errMsg := fmt.Sprintf("unable to begin tracking race: %s", err.Error())
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": errMsg})
+		return
+	}
 }
 
 func disconnectFromTwitchChat(w http.ResponseWriter, r *http.Request) {

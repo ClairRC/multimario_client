@@ -1,0 +1,42 @@
+body {
+    background-image: url('../resources/bg.png');
+    background-repeat: no-repeat;
+    background-size: cover;
+    overflow: hidden;
+    aspect-ratio: 16/9;
+}
+
+.header-info {
+    height: 18%;
+}
+
+.top-3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+    width: 65%;
+}
+
+.stats-grid {
+    margin-top: 3%;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 18vw);
+    justify-content: center;
+    gap: 2px;
+}
+
+.stats-grid .player-box {
+    width: 18vw;
+    aspect-ratio: 13/6;
+}
+
+.top-3 .player-box {
+    margin: auto;
+    height: 90%;
+    aspect-ratio: 13/6;
+}
+
+.player-box {
+    background-color: red;
+}

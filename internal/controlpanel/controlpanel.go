@@ -17,6 +17,7 @@ func InitControlPanel() {
 	mux.HandleFunc("GET /api/past_races", sendCompletedRaces)
 	mux.HandleFunc("GET /api/in_progress_race", sendInProgressRace)
 	mux.HandleFunc("GET /api/connected_to_twitch", isConnectedToTwitch)
+	mux.HandleFunc("POST /api/select_race", selectRace)
 	mux.HandleFunc("POST /api/start_race", startRace)
 	mux.HandleFunc("POST /api/finish_race", finishRace)
 	mux.HandleFunc("POST /api/reset_race", resetRace)
