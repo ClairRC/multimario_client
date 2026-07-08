@@ -1,3 +1,19 @@
+@font-face {
+  font-family: 'Lobster';
+  src: url('../resources/Lobster_1.4.otf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Delfino';
+  src: url('../resources/Delfino.otf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 body {
     background-image: url('../resources/bg.png');
     background-repeat: no-repeat;
@@ -19,11 +35,12 @@ body {
 }
 
 .stats-grid {
-    margin-top: 3%;
+    margin-top: 1%;
     display: grid;
     grid-template-columns: repeat(auto-fill, 18vw);
     justify-content: center;
-    gap: 2px;
+    column-gap: 1vw;
+    row-gap: 0.8vw;
 }
 
 .stats-grid .player-box {
@@ -38,5 +55,79 @@ body {
 }
 
 .player-box {
-    background-color: red;
+    --bg-image: none;
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(30, 30, 30, 0.3)), 
+        var(--bg-image);
+    background-repeat: no-repeat;
+    background-size: cover;
 }
+
+.user-info {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    height: 40%;
+    margin: 2%;
+}
+
+.user-pfp {
+    height: 100%;
+    aspect-ratio: 1/1;
+}
+
+.user-name {
+    font-family: 'Delfino';
+    width: 80%;
+    color: white;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 2%;
+}
+
+.user-position {
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+    width: 20%;
+    color: whitesmoke;
+    font-size: 3cqi;
+    text-align: right;
+}
+
+.progress {
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+    height: 45%;
+}
+
+.icon {
+    height: 80%;
+    margin-left: 5%;
+    aspect-ratio: 1/1;
+}
+
+.numeric-progress {
+    margin-left: auto;
+    margin-right: 2%;
+}
+
+.fraction {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.numerator {
+    font-size: 1.6em;
+    transform: translateX(-50%);
+    transform: translateY(-20%);
+}
+
+.denominator {
+    transform: translateX(75%);
+    transform: translateY(50%);
+}
+
