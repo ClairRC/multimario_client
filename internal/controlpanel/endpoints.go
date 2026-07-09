@@ -187,7 +187,7 @@ func selectRace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Start race on stats stream
-	err = stats.StartTrackingRace(raceID, "00:00:00", false)
+	err = stats.StartTrackingRace(raceID, "00:00:00", true)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

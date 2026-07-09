@@ -17,12 +17,13 @@
 body {
     background-image: url('../resources/bg.png');
     background-repeat: no-repeat;
-    background-size: cover;
     overflow: hidden;
+    background-size: cover;
     aspect-ratio: 16/9;
 }
 
 .header-info {
+    display: flex;
     height: 18%;
 }
 
@@ -56,7 +57,7 @@ body {
 
 .player-box {
     --bg-image: none;
-    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.8), rgba(30, 30, 30, 0.3)), 
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), rgba(10, 10, 10, 0.3)), 
         var(--bg-image);
     background-repeat: no-repeat;
     background-size: cover;
@@ -77,7 +78,8 @@ body {
 
 .user-name {
     font-family: 'Delfino';
-    width: 80%;
+    -webkit-text-stroke: 0.02cqi black;
+    width: 75%;
     color: white;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -89,6 +91,7 @@ body {
     letter-spacing: 0.1vw;
     width: 20%;
     color: whitesmoke;
+    -webkit-text-stroke: 0.1cqi black;
     font-size: 3cqi;
     text-align: right;
 }
@@ -103,6 +106,10 @@ body {
     height: 45%;
 }
 
+.game-progress {
+    -webkit-text-stroke: 0.1cqi black;
+}
+
 .icon {
     height: 80%;
     margin-left: 5%;
@@ -110,6 +117,8 @@ body {
 }
 
 .numeric-progress {
+    width: 40%;
+    height: 80%;
     margin-left: auto;
     margin-right: 2%;
 }
@@ -121,13 +130,40 @@ body {
 }
 
 .numerator {
-    font-size: 1.6em;
-    transform: translateX(-50%);
+    font-size: 1.8em;
+    -webkit-text-stroke: 0.05cqi black; 
+    transform: translateX(-40%);
     transform: translateY(-20%);
 }
 
 .denominator {
-    transform: translateX(75%);
+    -webkit-text-stroke: 0.04cqi black; 
+    font-size: 1.4em;
+    transform: translateX(66%);
     transform: translateY(50%);
 }
 
+.timer-box {
+    display: flex;
+    justify-content: center;
+    width: 30%;
+    margin: auto;
+    height: 100%;
+    background: rgba(20, 20, 20, 0.95);
+    border-color: black;
+    border-width: 1vw;
+    border-radius: 1cqi;
+}
+
+.timer {
+    color: white;
+    margin: auto;
+    font-size: 5cqi;
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+}
+
+.grid-scroller {
+    height: 100%;
+    overflow-y: hidden;
+}

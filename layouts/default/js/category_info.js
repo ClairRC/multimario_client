@@ -32,7 +32,7 @@ export function getCurrentBackgroundImage(raceCategory, numCollectibles) {
     }
 
     for (let i = 0; i < cat.categories.length; i++) {
-        if (startNumCollected == cat.total_collectibles) {
+        if (startNumCollected >= cat.total_collectibles) {
             return resourcesDirectory + cat.finish_background
         } else if (startNumCollected >= cat.categories[i].collectibles) {
             startNumCollected -= cat.categories[i].collectibles
@@ -51,7 +51,7 @@ export function getGameCount(raceCategory, numCollectibles) {
     }
 
     for (let i = 0; i < cat.categories.length; i++) {
-        if (startNumCollected == cat.total_collectibles) {
+        if (startNumCollected >= cat.total_collectibles) {
             return cat.categories[cat.categories.length-1].collectibles
         } else if (startNumCollected >= cat.categories[i].collectibles) {
             startNumCollected -= cat.categories[i].collectibles
@@ -77,7 +77,7 @@ export function getCurrentIconImage(raceCategory, numCollectibles) {
     }
 
     for (let i = 0; i < cat.categories.length; i++) {
-        if (startNumCollected == cat.total_collectibles) {
+        if (startNumCollected >= cat.total_collectibles) {
             return resourcesDirectory + cat.categories[cat.categories.length-1].icon
         } else if (startNumCollected >= cat.categories[i].collectibles) {
             startNumCollected -= cat.categories[i].collectibles
