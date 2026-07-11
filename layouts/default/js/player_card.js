@@ -25,22 +25,34 @@ export function getPlayerCard(playerDisplayName, playerTwitchName, playerPos, pf
 
 export function updatePlayerName(playerNewDisplay, playerTwitchName) {
     var card = document.getElementById(playerTwitchName)
+    if (card.className == "placeholder") {
+        return
+    }
     card.querySelector(".user-name").innerHTML = playerNewDisplay
 }
 
 export function updatePlayerPlacement(playerTwitchName, newPlacement) {
     var card = document.getElementById(playerTwitchName)
+    if (card.className == "placeholder") {
+        return
+    }
     card.querySelector(".user-position").innerHTML = newPlacement
 }
 
 export function updateCardImages(playerTwitchName, numCollected, raceCategory) {
     var card = document.getElementById(playerTwitchName)
+    if (card.className == "placeholder") {
+        return
+    }
     card.style.setProperty('--bg-image', `url('${category.getCurrentBackgroundImage(raceCategory, numCollected)}')`);
     card.querySelector(".icon").src = category.getCurrentIconImage(raceCategory, numCollected)
 }
 
 export function updatePlayerProgress(playerTwitchName, numCollected, raceCategory) {
     var card = document.getElementById(playerTwitchName)
+    if (card.className == "placeholder") {
+        return
+    }
     card.querySelector(".game-progress").innerHTML = category.getGameCount(raceCategory, numCollected)
     card.querySelector(".numeric-progress").innerHTML = toFrac(Math.min(numCollected, category.getTotalCollectibles(raceCategory)),category.getTotalCollectibles(raceCategory))
 }
@@ -50,9 +62,13 @@ export function fitText(element, maxFontSize = 2, minFontSize = 1.2) {
     var fontSize = maxFontSize
     element.style.fontSize = fontSize + "cqi"
     while(element.scrollWidth > element.clientWidth && fontSize >= minFontSize) {
-        fontSize -= 0.1
+        fontSize -= 0.2
         element.style.fontSize = fontSize + "cqi"
     }
+}
+
+export function getPlaceHolderCard(id) {
+    return `<div class="placeholder" id="${id}"></div>`
 }
 
 //Turns a fraction value to be a diagnoal fraction

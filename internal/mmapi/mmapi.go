@@ -50,6 +50,23 @@ type RecordInfo struct {
 	Player string `json:"player_name"`
 	PlayerTwitch string `json:"twitch_name"`
 	FinalTime string `json:"time"`
+	Estimate string `json:"estimate"`
+}
+
+//Run response structs
+type RunRes struct {
+	Success bool `json:"success"`
+	Error string `json:"error"`
+	Meta RaceResMetadata `json:"meta"`
+	Runs []RunInfo `json:"runs"`
+}
+
+type RunInfo struct {
+	ID float64 `json:"id"`
+	Player string `json:"player_name"`
+	GameCategory string `json:"game_category"`
+	Estimate string `json:"estimate"`
+	Time string `json:"time"`
 }
 
 //Function to set up mm api information
@@ -100,7 +117,7 @@ func GetPlayersForRace(raceID int) ([]RecordInfo, error) {
 
 	//Check for more pages
 	nextPage := recordResponse.Meta.NextPage
-	if nextPage != "" {
+	for nextPage != "" {
 		//Repeat the process
 		//Get records from mm api
 		endpoint := fmt.Sprintf("%s%s%s", ip, port, nextPage)
@@ -134,7 +151,7 @@ func GetPlayersForRace(raceID int) ([]RecordInfo, error) {
 
 		nextPage = recordResponse.Meta.NextPage
 	}
-
+	
 	return recordsArr, nil
 }
 
@@ -175,7 +192,7 @@ func getRacesFromStatus(status string) ([]RaceInfo, error) {
 
 	//Check for more pages
 	nextPage := raceResponse.Meta.NextPage
-	if nextPage != "" {
+	for nextPage != "" {
 		//Repeat the process
 		//Get upcoming races from mm api
 		endpoint := fmt.Sprintf("%s%s%s", ip, port, nextPage)

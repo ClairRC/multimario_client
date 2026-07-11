@@ -3,27 +3,33 @@ package stats
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
-	"sync"
 
 	"github.com/multimario_client/internal/mmapi"
+	"github.com/multimario_client/internal/twitch"
 )
 
 //This is the package for managing hosting the stats stream layout
+
+//Struct for player info that gets sent to stats stream
+type playerInfo struct {
+	//Similar to mmapi.records, but adds some Twitch info for stats stream to use
+	NumCollected float64 `json:"num_collected"`
+	Player string `json:"player_name"`
+	PlayerTwitch string `json:"twitch_name"`
+	FinalTime string `json:"time"`
+	Estimate string `json:"estimate"`
+	ProfilePictureURL string `json:"pfp_url"`
+}
 
 //Init stats stream with information from the backend
 type initStats struct {
 	RaceCat string `json:"race_category"`
 	RaceID int `json:"race_id"`
-	Records []mmapi.RecordInfo `json:"records"`
+	Records []playerInfo `json:"records"`
 	TimerValue string `json:"timer_value"`//hh:mm:ss format
 	TimerRunning bool `json:"timer_running"`
-}
-
-//Function to guarantee only 1 init signal gets sent to the frontend at a time
-type raceSelector struct {
-	mu sync.Mutex
-	currentRace uint64
 }
 
 var ip = "0.0.0.0"
@@ -32,8 +38,6 @@ var port = ":8080"
 var currentRaceID = -1 //Package level variable for race ID. Maybe should be put in some context struct? Idk.
 var messageQueue = make(chan(string), 100) //Queue for messages
 var logC = make(chan(string)) //Channel for sending messages over SSE
-
-var raceSelect = raceSelector{currentRace: 0}
 
 func InitStatsPage(layoutName string) {
 	layoutPath := fmt.Sprintf("./layouts/%s", layoutName)
@@ -65,11 +69,44 @@ func StartTrackingRace(raceID int, startingTimerValue string, startTimer bool) e
 		return err
 	}
 
+	//Use these records to get necessary twitch information
+	playerNames := make([]string, 0) //Slice to get twitch info
+	playerNameMap := make(map[string]*playerInfo) //Map to append new twitch info
+	for _, p := range players {
+		playerNames = append(playerNames, p.PlayerTwitch)
+		//Add incomplete playerInfo to the map
+		playerNameMap[p.PlayerTwitch] = &playerInfo{
+			NumCollected: p.NumCollected,
+			Player: "",
+			PlayerTwitch: p.PlayerTwitch,
+			FinalTime: p.FinalTime,
+			Estimate: p.Estimate,
+			ProfilePictureURL: "",
+		}
+	}
+	twitchUsers, err := twitch.GetTwitchInfoFromUserNames(playerNames)
+	if err != nil {
+		return err
+	}
+
+	//Fill in the blanks
+	for _, u := range twitchUsers {
+		pInfo := playerNameMap[u.Login]
+		pInfo.Player = u.DisplayName
+		pInfo.ProfilePictureURL = u.ProfilePictureURL 
+	}
+
+	//Add each value into a slice
+	recordsSlice := make([]playerInfo, 0)
+	for v := range maps.Values(playerNameMap) {
+		recordsSlice = append(recordsSlice, *v)
+	}
+
 	//Convert into initStats instance and jsonify
 	statsInit := initStats{
 		RaceCat: raceInfo.Category,
 		RaceID: raceID,
-		Records: players,
+		Records: recordsSlice,
 		TimerValue: startingTimerValue,
 		TimerRunning: startTimer,
 	}

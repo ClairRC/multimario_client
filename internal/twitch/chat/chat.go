@@ -1,5 +1,7 @@
 package chat
 
+//File for twitch chat functionality
+
 import (
 	"bufio"
 	"crypto/tls"
@@ -10,25 +12,24 @@ import (
 	"github.com/multimario_client/internal/twitch"
 )
 
-type TwitchClient struct {
-	userToken string
-	clientID string
+type TwitchChatClient struct {
+	credentials *twitch.TwitchCredentials
 	conn *tls.Conn
 }
 
-var Client = TwitchClient{}
+var Client = TwitchChatClient{}
 
-func (c *TwitchClient) SetTwitchConnectionParams(userToken string, clientID string) {
-	Client.userToken = userToken
-	Client.clientID = clientID
+func (c *TwitchChatClient) SetTwitchConnectionParams(params *twitch.TwitchCredentials) {
+	Client.credentials = params
 }
 
-func (c *TwitchClient) IsConnectedToTwitch() bool {
+
+func (c *TwitchChatClient) IsConnectedToTwitch() bool {
 	return c.conn != nil
 }
 
 //Connects to Twitch IRC and joins channel rooms. Returns TLS connection to Twitch IRC channel
-func (c *TwitchClient) ConnectToChat(targetRooms []string, logChannel chan(string)) {
+func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(string)) {
 	/*
 	* TODO: It is probably beneficial to at some point migrate to twitch's EventSub API for chat interfacing rather than IRC
 	* It might be worth it to wrap this function in some other function so that the architecture doesn't entirely
@@ -42,7 +43,7 @@ func (c *TwitchClient) ConnectToChat(targetRooms []string, logChannel chan(strin
 	c.conn = conn
 
 	//Get Twitch name from user token
-	userName, err := twitch.GetUserNameFromToken(c.userToken, c.clientID)
+	userName, err := twitch.GetUserNameFromToken(c.credentials.UserToken(), c.credentials.ClientID())
 	if err != nil {
 		logChannel <- err.Error()
 		return
@@ -50,7 +51,7 @@ func (c *TwitchClient) ConnectToChat(targetRooms []string, logChannel chan(strin
 
 	//Connect to rooms
 	fmt.Fprintf(conn, "CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
-	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.userToken)
+	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.credentials.UserToken())
 	fmt.Fprintf(conn, "NICK %s\r\n", userName)
 	
 	for _, name := range targetRooms {
@@ -68,7 +69,7 @@ func (c *TwitchClient) ConnectToChat(targetRooms []string, logChannel chan(strin
 }
 
 //Listens to Twitch chat and creates a channel for writing
-func (c *TwitchClient) ListenToChat(logChannel chan(string)) {
+func (c *TwitchChatClient) ListenToChat(logChannel chan(string)) {
 	logChannel <- "Listening to Twitch chat..."
 
 	//Create write channel and begin goroutine for writes
@@ -87,7 +88,7 @@ func (c *TwitchClient) ListenToChat(logChannel chan(string)) {
 }
 
 //Disconnects from twitch chat
-func (c *TwitchClient) DisconnectFromChat(logChannel chan(string)) error {
+func (c *TwitchChatClient) DisconnectFromChat(logChannel chan(string)) error {
 	logChannel <- "Disconnecting from Twitch Chat..."
 
 	err := c.conn.Close()

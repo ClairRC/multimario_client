@@ -8,6 +8,7 @@ import (
 	"github.com/multimario_client/internal/controlpanel"
 	"github.com/multimario_client/internal/mmapi"
 	"github.com/multimario_client/internal/stats"
+	"github.com/multimario_client/internal/twitch"
 	"github.com/multimario_client/internal/twitch/auth"
 	"github.com/multimario_client/internal/twitch/chat"
 )
@@ -36,7 +37,8 @@ func main() {
 	}
 
 	//Set twitch parameters
-	chat.Client.SetTwitchConnectionParams(token, settings.TwitchClientID)
+	twitch.SetTwitchParams(token, settings.TwitchClientID)
+	chat.Client.SetTwitchConnectionParams(twitch.GetTwitchParams())
 
 	//Initialize control panel
 	go controlpanel.InitControlPanel()

@@ -1,23 +1,39 @@
 import { onInit, onUpdate } from '../api.js'
 import * as player from './player_card.js'
 import * as category from './category_info.js'
+import * as timer from './timer.js'
 
 //This code is high key a mess godspeed
+
+/*TODO:
+    - add a quit/finished/etc status
+    - move quitters to the end and finishes before them
+    - make better finisher picture
+*/
 
 //Global variables for state
 var currentPlayerPlacements = []
 var currentRaceCategory = ""
 var currentCardAnimations = {} //Stores card animations globally so they can be cancelled if they overlap
 
-var timerElem = document.querySelector(".timer")
-var timerRunning = false
-var startTime = undefined
+//Cache to know what text needs to be updated since that's a bottleneck
+var updateText = {}
 
+//Durations (ms) for how long to STAY on each page before turning, indexed by page number.
+//Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
+const pageDurations = [10000, 10000, 10000] // 60s, 30s, 15s
+const fallbackPageDuration = 10000 // any page beyond the list above uses this
+var pageInterval = null
 var pageNum = 0
+
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 onInit(async (data) => {
+    if (pageInterval !== null) {
+        clearTimeout(pageInterval)
+        pageInterval = null
+    }
     currentPlayerPlacements = []
     currentRaceCategory = data.race_category
     currentCardAnimations = {}
@@ -33,13 +49,33 @@ onInit(async (data) => {
 
     //Sort player records so it goes up in the right order
     playerRecords.sort((a, b) => {
-        return b.time-a.time || b.num_collected - a.num_collected
+        var aFinished = a.num_collected >= category.getTotalCollectibles(data.race_category)
+        var bFinished = b.num_collected >= category.getTotalCollectibles(data.race_category)
+
+        //Both finished. rank by finish time, faster time first
+        if (aFinished && bFinished) {
+            return timeToSeconds(a.time) - timeToSeconds(b.time)
+        }
+
+        //Finished player goes after the active one
+        if (aFinished) return 1
+        if (bFinished) return -1
+
+        //Neither finished. rank by progress, most collected first
+        return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
     })
 
-    //Get each player's card and sauce them on the screen
+    //Sort records to get current placements
+    var sortedRecords = playerRecords
+        .slice()
+    sortedRecords.sort((a, b) => {
+        return b.num_collected - a.num_collected || timeToSeconds(a.time) - timeToSeconds(b.time)|| a.twitch_name.localeCompare(b.twitch_name)
+    })
+    var placementMap = {}
+    sortedRecords.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
+
     playerRecords.forEach((record, i) => {
-        const pictureURL = "https://static-cdn.jtvnw.net/jtv_user_pictures/6dece3b4-ebec-47a8-b735-771a62e825ec-profile_image-70x70.png"
-        var card = player.getPlayerCard(record.player_name, record.twitch_name, i+1, pictureURL, record.num_collected, data.race_category)
+        var card = player.getPlayerCard(record.player_name, record.twitch_name, placementMap[record.twitch_name], record.pfp_url, record.num_collected, data.race_category)
         var isInTop3 = i <= 2
         
         if (isInTop3) {
@@ -52,62 +88,104 @@ onInit(async (data) => {
         currentPlayerPlacements.push(record)
     });
 
+    //Add placeholder cards to the DOM just for page switching
+    for(let i = 0; i < 25; i++) {
+        statsGrid.innerHTML += player.getPlaceHolderCard(`__placeholder${i}`)
+    }
+
+    //For placeholders that are not on screen, set their display to none so they don't get in the way
+    for (let i = 0; i < ((currentPlayerPlacements.length-3) % 25); i++) {
+        var card = document.getElementById(`__placeholder${i}`)
+        card.style.display = "none"
+    }
+
+    while((currentPlayerPlacements.length-3) % 25 !== 0) {
+        currentPlayerPlacements.push({"twitch_name": `__placeholder${(currentPlayerPlacements.length-3) % 25}`, isPlaceHolder: true})
+    }
+
     //Reset timer and set current timer value
-    stopTimer()
+    timer.stopTimer()
     if (data.timer_running) {
-        startTimer(data.timer_value)
+        timer.startTimer(data.timer_value)
     }
 
     document.fonts.ready.then(() => {
         fixAllTextSizing()
     });
 
-    var testDatas = []
-    testDatas.push({
-        "twitch_name": "zgamut",
-        "num_collected": 100,
-    })        
-    testDatas.push({
-        "twitch_name": "bird650",
-        "num_collected": 150,
-    }) 
-    testDatas.push({
-        "twitch_name": "galax_v",
-        "num_collected": 210,
-    }) 
-    testDatas.push({
-        "twitch_name": "jukatox",
-        "num_collected": 280,
-    })
-    testDatas.push({
-        "twitch_name": "odme_",
-        "num_collected": 250,
-    })
-    testDatas.push({
-        "twitch_name": "muimania",
-        "num_collected": 80,
-    }) 
-    testDatas.push({
-        "twitch_name": "odme_",
-        "num_collected": 365,
-    })
-    testDatas.push({
-        "twitch_name": "gemoflol",
-        "num_collected": 95,
-    })
-    testDatas.push({
-        "twitch_name": "nathancarter602",
-        "num_collected": 289,
-    })
-    testDatas.push({
-        "twitch_name": "galax_v",
-        "num_collected": 700,
-    })
+    schedulePageTurn()
 
-    await sleep(2000)
-    for (let i = 0; i < testDatas.length; i++) {
-        updatePlayerCount(testDatas[i])
-        await sleep(500 * (i+1))
+    {
+        var testDatas = []
+        testDatas.push({
+            "twitch_name": "zgamut",
+            "num_collected": 100,
+        })        
+        testDatas.push({
+            "twitch_name": "bird650",
+            "num_collected": 150,
+        }) 
+        testDatas.push({
+            "twitch_name": "galax_v",
+            "num_collected": 210,
+        }) 
+        testDatas.push({
+            "twitch_name": "jukatox",
+            "num_collected": 280,
+        })
+        testDatas.push({
+            "twitch_name": "odme_",
+            "num_collected": 250,
+        })
+        testDatas.push({
+            "twitch_name": "muimania",
+            "num_collected": 80,
+        }) 
+        testDatas.push({
+            "twitch_name": "odme_",
+            "num_collected": 365,
+        })
+        testDatas.push({
+            "twitch_name": "gemoflol",
+            "num_collected": 95,
+        })
+        testDatas.push({
+            "twitch_name": "nathancarter602",
+            "num_collected": 289,
+        })
+        testDatas.push({
+            "twitch_name": "galax_v",
+            "num_collected": 700,
+        })
+         testDatas.push({
+            "twitch_name": "nathancarter602",
+            "num_collected": 306,
+        })
+        testDatas.push({
+            "twitch_name": "odme_",
+            "num_collected": 270,
+        })
+        testDatas.push({
+            "twitch_name": "zgamut",
+            "num_collected": 150,
+        })
+        testDatas.push({
+            "twitch_name": "galax_v",
+            "num_collected": 210,
+        })
+
+        await sleep(5000)
+        for (let i = 0; i < testDatas.length; i++) {
+            updatePlayerCount(testDatas[i])
+            await sleep(300 * (i+1))
+        }
+
+        //Change nathan carter name
+        var testNameChange = {
+            "twitch_name": "nathancarter602",
+            "player_name": "silly guy",
+        }
+        updatePlayerName(testNameChange)
     }
 })
 
@@ -123,18 +201,19 @@ onUpdate((data) => {
     }
 
     if (data.kind === "timer") {
-        timerUpdate(data)
+        timer.timerUpdate(data)
     }
 })*/
 
-async function updatePlayerCount(data) {
+function updatePlayerCount(data) {
     //Update this player's record in the cache
     currentPlayerPlacements.forEach(record => {
         if (record.twitch_name === data.twitch_name) {
             record.num_collected = data.num_collected
+            updateText[record.twitch_name] = true
         }
     });
-    updateCardPlacements()
+    updateCardPlacements(500)
 }
 
 function updatePlayerName(data) {
@@ -142,13 +221,15 @@ function updatePlayerName(data) {
     currentPlayerPlacements.forEach(record => {
         if (record.twitch_name === data.twitch_name) {
             record.player_name = data.player_name
+            updateText[record.twitch_name] = true
             player.updatePlayerName(record.player_name, record.twitch_name)
+            updatePlayerCards()
         }
     });
 }
 
 //Updates player cards. This is pretty slow because it just completely redoes the whole thing.
-function updateCardPlacements() {
+function updateCardPlacements(animationLength) {
     //Cache of current card locations before animating
     var initialLocationMap = {}
 
@@ -177,6 +258,10 @@ function updateCardPlacements() {
         var first = initialLocationMap[record.twitch_name]
         var last = card.getBoundingClientRect()
 
+        if (record.isPlaceHolder) {
+            return
+        }
+
         const deltaX = first.left - last.left;
         const deltaY = first.top - last.top;
         const deltaW = first.width / last.width;
@@ -192,12 +277,10 @@ function updateCardPlacements() {
             transformOrigin: 'top left',
             transform: 'none'
             }], {
-            duration: 500,
+            duration: animationLength,
             easing: 'ease-out',
             fill: 'both'
         });
-
-        fixCardTextSizing(card)
 
         //Add this to the current animations and when its finished delete it
         currentCardAnimations[record.twitch_name] = anim
@@ -213,17 +296,33 @@ function updatePlayerCards() {
     var statsGrid = document.querySelector(".stats-grid")
     var top3 = document.querySelector(".top-3")
 
+    sortPlayers()
+
     var playerRecords = currentPlayerPlacements
 
-    //Sort player records so it goes up in the right order
-    playerRecords.sort((a, b) => {
-        return b.time-a.time || b.num_collected - a.num_collected
+    var realRecordsSorted = playerRecords
+        .filter(r => !r.isPlaceHolder)
+        .slice()
+    realRecordsSorted.sort((a, b) => {
+        return b.num_collected - a.num_collected || timeToSeconds(a.time) - timeToSeconds(b.time)|| a.twitch_name.localeCompare(b.twitch_name)
     })
+
+    var placementMap = {}
+    realRecordsSorted.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
 
     //Get each player's card and sauce them on the screen
     playerRecords.forEach((record, i) => {
         var card = document.getElementById(record.twitch_name)
+
+        if (updateText[record.twitch_name]) {
+            fixCardTextSizing(card)
+            updateText[record.twitch_name] = false
+        }
+
         card.style.order = i
+
+        var playerPlacementNum = i < 3 ? (i+1) : (i + (25 * pageNum)) + 1
+
         var targetContainer = i < 3 ? top3 : statsGrid
 
         if (card.parentElement !== targetContainer) {
@@ -232,31 +331,138 @@ function updatePlayerCards() {
 
         card.style.order = i
 
-        //Update card visuals
+        if (record.isPlaceHolder) {
+            return
+        }
+
+        player.updatePlayerPlacement(record.twitch_name, placementMap[record.twitch_name])
         player.updateCardImages(record.twitch_name, record.num_collected, currentRaceCategory)
-        player.updatePlayerPlacement(record.twitch_name, (i+1))
         player.updatePlayerProgress(record.twitch_name, record.num_collected, currentRaceCategory)
     });
+}
 
-    fixAllTextSizing()
+function getPageDuration(pageIndex) {
+    if (pageIndex < pageDurations.length) {
+        return pageDurations[pageIndex]
+    }
+    return fallbackPageDuration
+}
+
+function schedulePageTurn() {
+    if (pageInterval !== null) {
+        clearTimeout(pageInterval)
+        pageInterval = null
+    }
+
+    var numPlayers = currentPlayerPlacements.length
+    var numPages = Math.ceil(((numPlayers-3)/25.0))
+    if (numPages <= 1) return //nothing to page through
+
+    var delay = getPageDuration(pageNum)
+
+    pageInterval = setTimeout(async () => {
+        await updatePage(400)
+        schedulePageTurn() //reschedule for the NEW pageNum, after the turn completes
+    }, delay)
+}
+
+async function updatePage(transitionLength) {
+    var numPlayers = currentPlayerPlacements.length
+    var numPages = Math.ceil(((numPlayers-3)/25.0))
+    if (numPages <= 1) return
+
+    var statsGrid = document.querySelector(".stats-grid")
+
+    //distance from the top of the current page's first card
+    var pageHeight = getPageHeight(3, 25)
+    if (!pageHeight) return
+
+    //scroll the whole grid up smoothly
+    statsGrid.style.transition = `transform ${transitionLength}ms ease-in-out`
+    statsGrid.style.transform = `translateY(-${pageHeight}px)`
+
+    await new Promise(resolve => {
+        statsGrid.addEventListener('transitionend', resolve, { once: true })
+    })
+
+    pageNum = (pageNum + 1) % numPages
+    updatePlayerCards()
+
+    statsGrid.style.transition = 'none'
+    statsGrid.style.transform = 'translateY(0px)'
+    void statsGrid.offsetHeight // force reflow before re-enabling transitions
+    statsGrid.style.transition = ''
+}
+
+function getPageHeight(startIndex, pageSize) {
+    var current = currentPlayerPlacements[startIndex]
+    var next = currentPlayerPlacements[startIndex + pageSize]
+    if (!current || !next) return 0
+
+    var elCurrent = document.getElementById(current.twitch_name)
+    var elNext = document.getElementById(next.twitch_name)
+    if (!elCurrent || !elNext) return 0
+
+    return elNext.getBoundingClientRect().top - elCurrent.getBoundingClientRect().top
+}
+
+function sortPlayers() {
+    //Sort real records so it goes up in the right order
+    var fakeRecords = currentPlayerPlacements.filter(r => r.isPlaceHolder)
+    var realRecords = currentPlayerPlacements.filter(r => !r.isPlaceHolder)
+    realRecords.sort((a, b) => {
+        var aFinished = a.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+        var bFinished = b.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+
+        //Both finished. rank by finish time, faster time first
+        if (aFinished && bFinished) {
+            return timeToSeconds(a.time) - timeToSeconds(b.time)
+        }
+
+        //Finished player goes after the active one
+        if (aFinished) return 1
+        if (bFinished) return -1
+
+        //Neither finished. rank by progress, most collected first
+        return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
+    })
+
+    //Add the fake records back in
+    for (let i = 0; i < fakeRecords.length; i++) {
+        realRecords.push(fakeRecords[i])
+    }
+
+    //After sorted by placement, sort by page number
+    var newPlacements = []
+    var numPlayers = realRecords.length
+
+    //Add top 3 because they are always on the top
+    for (let i = 0; i < 3; i++) {
+        newPlacements.push(realRecords[i])
+    }
+
+    //For the rest, go through each page starting at the current page
+    var numPages = (numPlayers-3)/25
+    for (let i = pageNum; i < numPages + pageNum; i++) {
+        var currentPageNum = i % numPages
+        var jBound = ((3 + (currentPageNum * 25)) + 25)
+        for(let j = (3 + (currentPageNum * 25)); j < jBound; j++) {
+            newPlacements.push(realRecords[j])
+        }
+    }
+    currentPlayerPlacements = [...newPlacements]
 }
 
 function fixCardTextSizing(cardElement) {
     //Get user name elements to fit them properly
     var userNames = cardElement.querySelectorAll(".user-name")
     userNames.forEach(element => {
-        player.fitText(element, 1.9, 1.0)
+        player.fitText(element, 1.9, 1.4)
     });
 
-    var progressValues = cardElement.querySelectorAll(".progress")
+    var progressValues = cardElement.querySelectorAll(".game-progress")
     progressValues.forEach(element => {
-        player.fitText(element, 1.8, 1.5)
-    });
-
-    //Total progress needs to have a smaller max size
-    progressValues = cardElement.querySelectorAll(".numeric-progress")
-    progressValues.forEach(element => {
-        player.fitText(element, 1.2, 0.0)
+        player.fitText(element, 3.3 , 1.5)
     });
 }
 
@@ -264,12 +470,12 @@ function fixAllTextSizing() {
     //Get user name elements to fit them properly
     var userNames = document.querySelectorAll(".user-name")
     userNames.forEach(element => {
-        player.fitText(element, 1.9, 1.0)
+        player.fitText(element, 1.9, 1.4)
     });
 
-    var progressValues = document.querySelectorAll(".progress")
+    var progressValues = document.querySelectorAll(".game-progress")
     progressValues.forEach(element => {
-        player.fitText(element, 1.8 , 1.5)
+        player.fitText(element, 3.3 , 1.5)
     });
 
     //Total progress needs to have a smaller max size
@@ -279,87 +485,18 @@ function fixAllTextSizing() {
     });
 }
 
-function timerUpdate(data) {
-    var newTimerVal = "00:00:00"
-
-    if (data.timer_value !== undefined) {
-        newTimerVal = data.timer_value
-
-        //Update timer visually
-        timerElem.innerHTML = data.timer_value
+function timeToSeconds(time) {
+    if (time === undefined) {
+        return Number.MAX_SAFE_INTEGER
     }
 
-    if (data.timer_running !== undefined) {
-        timerRunning = data.timer_running
-    }
+    var hoursString = time.split(":")[0]
+    var minutesString = time.split(":")[1]
+    var secondsString = time.split(":")[2]
 
-    if (timerRunning) {
-        startTimer(timerElem.innerHTML)
-    }
-}
+    var out = parseInt(hoursString) * 3600
+    out += parseInt(minutesString) * 60
+    out += parseInt(secondsString)
 
-//Checks to make sure the passed in timer value is valid
-function timerValueIsValid(timerValue) {
-    //Split the string
-    const individualVals = timerValue.split(":")
-    if (individualVals.length !== 3) {
-        return false
-    }
-
-    const hour = parseInt(individualVals[0], 10)
-    const minute = parseInt(individualVals[1], 10)
-    const second = parseInt(individualVals[2], 10)
-
-    if (Number.isNaN(hour) || Number.isNaN(minute) || Number.isNaN(second)) {
-        return false
-    }
-
-    if (hour < 0 || minute < 0 || minute >= 60 || second < 0 || second >= 60) {
-        return false
-    }
-
-    return true
-}
-
-function startTimer(initialTimerValue = "00:00:00") {
-    if (!timerValueIsValid(initialTimerValue)) {
-        initialTimerValue = "00:00:00"
-    } 
-
-    //Get the initial number of milliseconds
-    var timerValsArray = initialTimerValue.split(":")
-    var hours = parseInt(timerValsArray[0], 10)
-    var minutes = parseInt(timerValsArray[1], 10)
-    var seconds = parseInt(timerValsArray[2], 10)
-
-    seconds += minutes * 60
-    seconds += hours * 3600
-
-    timerRunning = true
-    startTime = performance.now() - seconds * 1000;
-
-    if (timerRunning) {
-        requestAnimationFrame(incrementTimer)
-    }
-}
-
-function stopTimer() {
-    timerRunning = false
-}
-
-function incrementTimer() {
-    var timer = timerElem
-
-    const elapsedMs = performance.now() - startTime;
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    timer.innerHTML = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
-
-    if (timerRunning) {
-        requestAnimationFrame(incrementTimer)
-    }
+    return out
 }

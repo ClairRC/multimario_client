@@ -7,7 +7,7 @@ const sm64_120 = {"collectibles": 120, "background": "sm64_2.png", "icon": "sm64
 const smg1_120 = {"collectibles": 120, "background": "smg1_2.png", "icon": "smg1_progress_icon.png"}
 const sms_120 = {"collectibles": 120, "background": "sms_1.png", "icon": "sms_progress_icon.png"}
 const smg2_242 = {"collectibles": 242, "background": "smg2_2.png", "icon": "smg1_progress_icon.png"}
-const smo_all_moons = {"collectibles": 880, "background": "smo_4.jpg", "icon": "smo_progress_icon.svg"}
+const smo_all_moons = {"collectibles": 880, "background": "smo_1.png", "icon": "smo_progress_icon_moon.svg"}
 const sm3dw_380 = {"collectibles": 380, "background": "sm3dw_1.png"}
 
 //Race category information
