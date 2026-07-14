@@ -95,6 +95,26 @@ func GetUserToken(clientID string, clientSecret string) (string, error) {
 
 }
 
+//Attempt to refresh expired user token
+func RefreshExpiredToken(clientID string, clientSecret string) (string, error) {
+	//Get the current token
+	oldToken, err := getSavedToken(userTokenPath)
+	if err != nil {
+		return "", err
+	}
+
+	//Refresh the token
+	newToken, err := refreshToken(oldToken, clientID, clientSecret)
+	if err != nil {
+		return "", err
+	}
+
+	//No errors, save the token
+	saveUserToken(userTokenPath, newToken)
+
+	return newToken.token, nil
+}
+
 //Exchanges Twitch auth code for user token
 func exchangeCode(clientID string, clientSecret string, code string) (*twitchUserToken, error) {
 	//Create post request for access token
@@ -170,7 +190,7 @@ func getSavedToken(tokenJSONPath string) (*twitchUserToken, error){
 //Saves user token to JSON file
 func saveUserToken(tokenJSONPath string, userToken *twitchUserToken) {
 	//R/W only for owner
-	tokenFile, err := os.OpenFile(tokenJSONPath, os.O_WRONLY | os.O_CREATE, 0600)
+	tokenFile, err := os.OpenFile(tokenJSONPath, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0600)
 	if err != nil {
 		return
 	}
@@ -185,6 +205,7 @@ func saveUserToken(tokenJSONPath string, userToken *twitchUserToken) {
 }
 
 //Takes a user token, refreshes it, and then returns a pointer to the new token
+//Takes an optional callback to call once the token has been refreshed
 func refreshToken(userToken *twitchUserToken, clientID string, clientSecret string) (*twitchUserToken, error) {
 	//Get request
 	refreshEndpoint := "https://id.twitch.tv/oauth2/token"

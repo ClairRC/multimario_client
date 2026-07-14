@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/multimario_client/internal/mmapi"
-	"github.com/multimario_client/internal/stats"
+	"github.com/multimario_client/internal/store"
 	"github.com/multimario_client/internal/twitch/chat"
 )
 
@@ -120,35 +120,10 @@ func isConnectedToTwitch(w http.ResponseWriter, r *http.Request) {
 
 /*
 * POST
-* Takes race_id to start in URL
 */
 func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
-	//Gets value from URL
-	urlIDs := r.URL.Query()["race_id"]
-	if len(urlIDs) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": "missing race id"})
-		return
-	}
-
-	//This endpoint will only accept 1 race, so throw out the rest
-	raceID, err := strconv.Atoi(urlIDs[0])
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
-		return
-	}
-
-	//After we have the raceID, get a list of twitch channels from the backend
-	playerRecords, err := mmapi.GetPlayersForRace(raceID)
-
-	//We only need the channel names, so convert them into a string array 
-	twitchChannels := make([]string, 0)
-	for _, record := range playerRecords {
-		twitchChannels = append(twitchChannels, record.PlayerTwitch)
-	}
+	//Get twitch channels from storage
+	twitchChannels, err := store.Race.GetRacerTwitchChannels()
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -187,7 +162,7 @@ func selectRace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	//Start race on stats stream
-	err = stats.StartTrackingRace(raceID, "00:00:00", true)
+	err = store.Race.LoadRace(raceID)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

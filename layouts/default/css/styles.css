@@ -51,6 +51,7 @@ body {
 }
 
 .top-3 .player-box {
+    width: 20vw;
     margin: auto;
     height: 90%;
     aspect-ratio: 13/6;
@@ -94,7 +95,8 @@ body {
     letter-spacing: 0.1vw;
     width: 25%;
     color: whitesmoke;
-    -webkit-text-stroke: 0.05cqi black;
+    --stroke-color: none;
+    -webkit-text-stroke: 0.03cqi var(--stroke-color);
     font-size: 3cqi;
     text-align: right;
 }
@@ -110,7 +112,10 @@ body {
 }
 
 .game-progress {
-    -webkit-text-stroke: 0.1cqi black;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    --stroke-color: none;
+    -webkit-text-stroke: 0.06cqi var(--stroke-color);
 }
 
 .icon {
@@ -134,13 +139,13 @@ body {
 
 .numerator {
     font-size: 1.8em;
-    -webkit-text-stroke: 0.05cqi black; 
+    -webkit-text-stroke: 0.04cqi black; 
     transform: translateX(-40%);
     transform: translateY(-20%);
 }
 
 .denominator {
-    -webkit-text-stroke: 0.04cqi black; 
+    -webkit-text-stroke: 0.03cqi black; 
     font-size: 1.4em;
     transform: translateX(66%);
     transform: translateY(50%);
@@ -176,4 +181,14 @@ body {
     pointer-events: none;
     width: 18vw;
     aspect-ratio: 13/6;
+}
+
+.quit-text {
+    color: rgb(255, 90, 90);
+    -webkit-text-stroke: 0.02cqi red;
+    max-width: 80%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 2%;
 }

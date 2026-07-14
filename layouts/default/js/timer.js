@@ -3,6 +3,7 @@
 var timerElem = document.querySelector(".timer")
 var timerRunning = false
 var startTime = undefined
+var currentTimerString = "00:00:00"
 
 export function timerUpdate(data) {
     var newTimerVal = "00:00:00"
@@ -73,8 +74,6 @@ export function stopTimer() {
 }
 
 export function incrementTimer() {
-    var timer = timerElem
-
     const elapsedMs = performance.now() - startTime;
     const totalSeconds = Math.floor(elapsedMs / 1000);
 
@@ -82,9 +81,14 @@ export function incrementTimer() {
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
 
-    timer.innerHTML = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+    currentTimerString = `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+    timerElem.innerHTML = currentTimerString;
 
     if (timerRunning) {
         requestAnimationFrame(incrementTimer)
     }
+}
+
+export function getCurrentTimerValue() {
+    return timerValueIsValid(currentTimerString) ? currentTimerString : undefined
 }

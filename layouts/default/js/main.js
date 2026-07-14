@@ -3,11 +3,11 @@ import * as player from './player_card.js'
 import * as category from './category_info.js'
 import * as timer from './timer.js'
 
+
+
 //This code is high key a mess godspeed
 
 /*TODO:
-    - add a quit/finished/etc status
-    - move quitters to the end and finishes before them
     - make better finisher picture
 */
 
@@ -26,10 +26,12 @@ const fallbackPageDuration = 10000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
 
+var pageGeneration = 0 //So that functions running asyncronously can tell when onInit has been called again so they don't run
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-onInit(async (data) => {
+onInit((data) => {
+    pageGeneration++
     if (pageInterval !== null) {
         clearTimeout(pageInterval)
         pageInterval = null
@@ -37,6 +39,8 @@ onInit(async (data) => {
     currentPlayerPlacements = []
     currentRaceCategory = data.race_category
     currentCardAnimations = {}
+    updateText = {}
+    pageNum = 0
 
     var statsGrid = document.querySelector(".stats-grid")
     var top3 = document.querySelector(".top-3")
@@ -47,35 +51,16 @@ onInit(async (data) => {
 
     var playerRecords = data.records
 
-    //Sort player records so it goes up in the right order
-    playerRecords.sort((a, b) => {
-        var aFinished = a.num_collected >= category.getTotalCollectibles(data.race_category)
-        var bFinished = b.num_collected >= category.getTotalCollectibles(data.race_category)
-
-        //Both finished. rank by finish time, faster time first
-        if (aFinished && bFinished) {
-            return timeToSeconds(a.time) - timeToSeconds(b.time)
-        }
-
-        //Finished player goes after the active one
-        if (aFinished) return 1
-        if (bFinished) return -1
-
-        //Neither finished. rank by progress, most collected first
-        return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
-    })
-
-    //Sort records to get current placements
-    var sortedRecords = playerRecords
-        .slice()
-    sortedRecords.sort((a, b) => {
-        return b.num_collected - a.num_collected || timeToSeconds(a.time) - timeToSeconds(b.time)|| a.twitch_name.localeCompare(b.twitch_name)
-    })
+    //First, sort by rank to get placement
     var placementMap = {}
-    sortedRecords.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
+    playerRecords.sort(orderRankComparator)
+    playerRecords.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
+    
+    //Next, sort by display order
+    playerRecords.sort(orderDisplayComparator)
 
     playerRecords.forEach((record, i) => {
-        var card = player.getPlayerCard(record.player_name, record.twitch_name, placementMap[record.twitch_name], record.pfp_url, record.num_collected, data.race_category)
+        var card = player.getPlayerCard(record.player_name, record.twitch_name, placementMap[record.twitch_name], record.pfp_url, record.num_collected, record.status, record.time, data.race_category)
         var isInTop3 = i <= 2
         
         if (isInTop3) {
@@ -114,83 +99,9 @@ onInit(async (data) => {
     });
 
     schedulePageTurn()
-
-    {
-        var testDatas = []
-        testDatas.push({
-            "twitch_name": "zgamut",
-            "num_collected": 100,
-        })        
-        testDatas.push({
-            "twitch_name": "bird650",
-            "num_collected": 150,
-        }) 
-        testDatas.push({
-            "twitch_name": "galax_v",
-            "num_collected": 210,
-        }) 
-        testDatas.push({
-            "twitch_name": "jukatox",
-            "num_collected": 280,
-        })
-        testDatas.push({
-            "twitch_name": "odme_",
-            "num_collected": 250,
-        })
-        testDatas.push({
-            "twitch_name": "muimania",
-            "num_collected": 80,
-        }) 
-        testDatas.push({
-            "twitch_name": "odme_",
-            "num_collected": 365,
-        })
-        testDatas.push({
-            "twitch_name": "gemoflol",
-            "num_collected": 95,
-        })
-        testDatas.push({
-            "twitch_name": "nathancarter602",
-            "num_collected": 289,
-        })
-        testDatas.push({
-            "twitch_name": "galax_v",
-            "num_collected": 700,
-        })
-         testDatas.push({
-            "twitch_name": "nathancarter602",
-            "num_collected": 306,
-        })
-        testDatas.push({
-            "twitch_name": "odme_",
-            "num_collected": 270,
-        })
-        testDatas.push({
-            "twitch_name": "zgamut",
-            "num_collected": 150,
-        })
-        testDatas.push({
-            "twitch_name": "galax_v",
-            "num_collected": 210,
-        })
-
-        await sleep(5000)
-        for (let i = 0; i < testDatas.length; i++) {
-            updatePlayerCount(testDatas[i])
-            await sleep(300 * (i+1))
-        }
-
-        //Change nathan carter name
-        var testNameChange = {
-            "twitch_name": "nathancarter602",
-            "player_name": "silly guy",
-        }
-        updatePlayerName(testNameChange)
-    }
 })
 
 
-/*
 onUpdate((data) => {
     if (data.kind === "player_count") {
         updatePlayerCount(data)
@@ -200,16 +111,29 @@ onUpdate((data) => {
         updatePlayerName(data)
     }
 
+    if (data.kind === "player_status") {
+        updatePlayerStatus(data)
+    }
+
+    if (data.kind === "player_time") {
+        updatePlayerTime(data)
+    }
+
     if (data.kind === "timer") {
         timer.timerUpdate(data)
     }
-})*/
+})
 
 function updatePlayerCount(data) {
     //Update this player's record in the cache
     currentPlayerPlacements.forEach(record => {
         if (record.twitch_name === data.twitch_name) {
             record.num_collected = data.num_collected
+            //If this player has just finished, set their finish time to be the current timer value
+            if (record.num_collected >= category.getTotalCollectibles(currentRaceCategory)) {
+                record.time = timer.getCurrentTimerValue()
+            }
+
             updateText[record.twitch_name] = true
         }
     });
@@ -226,6 +150,29 @@ function updatePlayerName(data) {
             updatePlayerCards()
         }
     });
+}
+
+function updatePlayerStatus(data) {
+    //Update this player's record in the cache
+    currentPlayerPlacements.forEach(record => {
+        if (record.twitch_name === data.twitch_name) {
+            record.status = data.status
+            updateText[record.twitch_name] = true
+        }
+    });
+    updateCardPlacements(500)
+}
+
+
+function updatePlayerTime(data) {
+    //Update this player's record in the cache
+    currentPlayerPlacements.forEach(record => {
+        if (record.twitch_name === data.twitch_name) {
+            record.time = data.time
+            updateText[record.twitch_name] = true
+        }
+    });
+    updateCardPlacements(500)
 }
 
 //Updates player cards. This is pretty slow because it just completely redoes the whole thing.
@@ -300,12 +247,11 @@ function updatePlayerCards() {
 
     var playerRecords = currentPlayerPlacements
 
+    //Extract placeholder records
     var realRecordsSorted = playerRecords
         .filter(r => !r.isPlaceHolder)
         .slice()
-    realRecordsSorted.sort((a, b) => {
-        return b.num_collected - a.num_collected || timeToSeconds(a.time) - timeToSeconds(b.time)|| a.twitch_name.localeCompare(b.twitch_name)
-    })
+    realRecordsSorted.sort(orderRankComparator)
 
     var placementMap = {}
     realRecordsSorted.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
@@ -313,11 +259,6 @@ function updatePlayerCards() {
     //Get each player's card and sauce them on the screen
     playerRecords.forEach((record, i) => {
         var card = document.getElementById(record.twitch_name)
-
-        if (updateText[record.twitch_name]) {
-            fixCardTextSizing(card)
-            updateText[record.twitch_name] = false
-        }
 
         card.style.order = i
 
@@ -336,8 +277,13 @@ function updatePlayerCards() {
         }
 
         player.updatePlayerPlacement(record.twitch_name, placementMap[record.twitch_name])
-        player.updateCardImages(record.twitch_name, record.num_collected, currentRaceCategory)
-        player.updatePlayerProgress(record.twitch_name, record.num_collected, currentRaceCategory)
+        player.updateCardImages(record.twitch_name, record.num_collected, currentRaceCategory, record.status)
+        player.updatePlayerProgress(record.twitch_name, record.num_collected, currentRaceCategory, record.status, record.time)
+
+        if (updateText[record.twitch_name]) {
+            fixCardTextSizing(card)
+            updateText[record.twitch_name] = false
+        }
     });
 }
 
@@ -367,6 +313,8 @@ function schedulePageTurn() {
 }
 
 async function updatePage(transitionLength) {
+    var currentPageGeneration = pageGeneration
+
     var numPlayers = currentPlayerPlacements.length
     var numPages = Math.ceil(((numPlayers-3)/25.0))
     if (numPages <= 1) return
@@ -384,6 +332,11 @@ async function updatePage(transitionLength) {
     await new Promise(resolve => {
         statsGrid.addEventListener('transitionend', resolve, { once: true })
     })
+
+    //A new page was generated, don't do the animation.
+    if (currentPageGeneration !== pageGeneration) {
+        return
+    }
 
     pageNum = (pageNum + 1) % numPages
     updatePlayerCards()
@@ -410,22 +363,7 @@ function sortPlayers() {
     //Sort real records so it goes up in the right order
     var fakeRecords = currentPlayerPlacements.filter(r => r.isPlaceHolder)
     var realRecords = currentPlayerPlacements.filter(r => !r.isPlaceHolder)
-    realRecords.sort((a, b) => {
-        var aFinished = a.num_collected >= category.getTotalCollectibles(currentRaceCategory)
-        var bFinished = b.num_collected >= category.getTotalCollectibles(currentRaceCategory)
-
-        //Both finished. rank by finish time, faster time first
-        if (aFinished && bFinished) {
-            return timeToSeconds(a.time) - timeToSeconds(b.time)
-        }
-
-        //Finished player goes after the active one
-        if (aFinished) return 1
-        if (bFinished) return -1
-
-        //Neither finished. rank by progress, most collected first
-        return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
-    })
+    realRecords.sort(orderDisplayComparator)
 
     //Add the fake records back in
     for (let i = 0; i < fakeRecords.length; i++) {
@@ -462,7 +400,16 @@ function fixCardTextSizing(cardElement) {
 
     var progressValues = cardElement.querySelectorAll(".game-progress")
     progressValues.forEach(element => {
-        player.fitText(element, 3.3 , 1.5)
+        if (element.style.display !== "none") {
+            player.fitText(element, 3.3 , 1.5)
+        }
+    });
+
+    var quitText = cardElement.querySelectorAll(".quit-text")
+    quitText.forEach(element => {
+        if (element.style.display !== "none") {
+            player.fitText(element, 3.0, 0.5)
+        }
     });
 }
 
@@ -475,7 +422,16 @@ function fixAllTextSizing() {
 
     var progressValues = document.querySelectorAll(".game-progress")
     progressValues.forEach(element => {
-        player.fitText(element, 3.3 , 1.5)
+        if (element.style.display !== "none") {
+            player.fitText(element, 3.3 , 1.5)
+        }
+    });
+
+    var quitText = document.querySelectorAll(".quit-text")
+    quitText.forEach(element => {
+        if (element.style.display !== "none") {
+            player.fitText(element, 3.0, 0.5)
+        }
     });
 
     //Total progress needs to have a smaller max size
@@ -486,17 +442,58 @@ function fixAllTextSizing() {
 }
 
 function timeToSeconds(time) {
-    if (time === undefined) {
+    if (!time || typeof time !== "string") {
         return Number.MAX_SAFE_INTEGER
     }
 
-    var hoursString = time.split(":")[0]
-    var minutesString = time.split(":")[1]
-    var secondsString = time.split(":")[2]
+    var parts = time.split(":")
+    if (parts.length !== 3) {
+        return Number.MAX_SAFE_INTEGER
+    }
 
-    var out = parseInt(hoursString) * 3600
-    out += parseInt(minutesString) * 60
-    out += parseInt(secondsString)
+    var out = parseInt(parts[0]) * 3600 + parseInt(parts[1]) * 60 + parseInt(parts[2])
 
-    return out
+    return isNaN(out) ? Number.MAX_SAFE_INTEGER : out
+}
+
+function orderRankComparator(a, b) {
+    var aFinished = a.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+    var bFinished = b.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+
+    //If both finished, rank solely by time
+    if (aFinished && bFinished) {
+    return timeToSeconds(a.time) - timeToSeconds(b.time) || a.twitch_name.localeCompare(b.twitch_name)
+}
+    if (aFinished) return -1 //Finishers always rank higher than non finishers
+    if (bFinished) return 1
+
+    return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
+}
+
+function orderDisplayComparator(a, b) {
+    var aFinished = a.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+    var bFinished = b.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+
+    var aQuit = a.status !== "running"
+    var bQuit = b.status !== "running"
+
+    //If both players quit, num collectibles determines who gets shown first
+    if (aQuit && bQuit) {
+        return b.num_collected - a.num_collected
+    }
+
+    if (aQuit) return 1 //Quitters automatically get ranked lower than anybody else
+    if (bQuit) return -1
+
+    //Both finished. rank by finish time, faster time first
+    if (aFinished && bFinished) {
+    return timeToSeconds(a.time) - timeToSeconds(b.time) || a.twitch_name.localeCompare(b.twitch_name)
+}
+
+    //Finished player goes after the active one
+    if (aFinished) return 1
+    if (bFinished) return -1
+
+    //Neither finished. rank by progress, most collected first
+    return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
 }

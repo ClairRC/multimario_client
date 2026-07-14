@@ -37,7 +37,7 @@ func main() {
 	}
 
 	//Set twitch parameters
-	twitch.SetTwitchParams(token, settings.TwitchClientID)
+	twitch.SetTwitchParams(token, settings.TwitchClientID, settings.TwitchClientSecret)
 	chat.Client.SetTwitchConnectionParams(twitch.GetTwitchParams())
 
 	//Initialize control panel

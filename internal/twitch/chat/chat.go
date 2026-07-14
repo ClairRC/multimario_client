@@ -5,6 +5,7 @@ package chat
 import (
 	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	* It might be worth it to wrap this function in some other function so that the architecture doesn't entirely
 	* depend on this TLS connection.
 	*/
+
 	conn, err := tls.Dial("tcp", "irc.chat.twitch.tv:6697", &tls.Config{})
 	if err != nil {
 		logChannel <- err.Error()
@@ -53,11 +55,23 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	fmt.Fprintf(conn, "CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
 	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.credentials.UserToken())
 	fmt.Fprintf(conn, "NICK %s\r\n", userName)
-	
+
+	//Add logic to make sure we are added to our own twitch chat
+	var selfAdded = false
 	for _, name := range targetRooms {
 		//TODO: Add a check to make sure that this doesn't fail silently.
+		if name == userName {
+			selfAdded = true
+		}
+
 		logChannel <- fmt.Sprintf("Attempting to connect to %s", name)
 		fmt.Fprintf(conn, "JOIN #%s\r\n", name)
+		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+	}
+
+	if !selfAdded {
+		logChannel <- fmt.Sprintf("Attempting to connect to %s", userName)
+		fmt.Fprintf(conn, "JOIN #%s\r\n", userName)
 		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 	}
 	
@@ -91,10 +105,40 @@ func (c *TwitchChatClient) ListenToChat(logChannel chan(string)) {
 func (c *TwitchChatClient) DisconnectFromChat(logChannel chan(string)) error {
 	logChannel <- "Disconnecting from Twitch Chat..."
 
+	//Connection is nil, nothing more to do here
+	if c.conn == nil {
+		return nil
+	}
+
 	err := c.conn.Close()
 	c.conn = nil
 
 	return err
+}
+
+//Connects to specific user's chat
+func (c *TwitchChatClient) ConnectToUser(twitchRoom string) error {
+	if c.conn == nil {
+		return errors.New("bot not currently connected to twitch")
+	}
+
+	fmt.Fprintf(c.conn, "JOIN #%s\r\n", twitchRoom)
+	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+
+	return nil
+}
+
+//Disconnects from specific user's chat
+func (c *TwitchChatClient) DisconnectFromUser(twitchRoom string) error {
+	if c.conn == nil {
+		return errors.New("bot not currently connected to twitch")
+	}
+
+	//Connect to rooms
+	fmt.Fprintf(c.conn, "PART #%s\r\n", twitchRoom)
+	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+
+	return nil
 }
 
 //Takes a line of text and parses it

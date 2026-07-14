@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+
+	"github.com/multimario_client/internal/twitch/auth"
 )
 
 //General functions for interacting with twitch API
@@ -14,6 +16,7 @@ import (
 type TwitchCredentials struct {
 	userToken string
 	clientID string
+	clientSecret string
 }
 
 type TwitchUserResponse struct {
@@ -29,9 +32,10 @@ type TwitchUser struct {
 
 var defaultCredentials = &TwitchCredentials{}
 
-func SetTwitchParams(userToken string, clientID string) {
+func SetTwitchParams(userToken string, clientID string, clientSecret string) {
 	defaultCredentials.userToken = userToken
 	defaultCredentials.clientID = clientID
+	defaultCredentials.clientSecret = clientSecret
 }
 
 func GetTwitchParams() *TwitchCredentials {
@@ -46,27 +50,43 @@ func (c *TwitchCredentials) ClientID() string {
 	return c.clientID
 }
 
+func (c *TwitchCredentials) ClientSecret() string {
+	return c.clientSecret
+}
+
 //Takes twitch user token and returns the login name for that account
 func GetUserNameFromToken(userToken string, clientID string) (string, error) {
-	//Create request
-	req, err := http.NewRequest("GET", "https://api.twitch.tv/helix/users", nil)
-	if err != nil {
-		return "", err
-	}
-
-	authHeader := fmt.Sprintf("Bearer %s", userToken)
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Client-Id", clientID)
-
-	//Get response
-	twitchClient := http.Client{}
-	resp, err := twitchClient.Do(req)
+	resp, err := doGetTwitchUsersRequest("https://api.twitch.tv/helix/users", userToken, clientID)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	//Check for errors
+	//If unauthorized, attempt to refresh
+	if resp.StatusCode == http.StatusUnauthorized {
+		newToken, err := auth.RefreshExpiredToken(defaultCredentials.clientID, defaultCredentials.clientSecret)
+		if err != nil {
+			//Failed refresh, return error
+			return "", errors.New("unable to refresh twitch user token. try resetting the bot.")
+		}
+
+		//New token is valid. Save it and try the request again
+		SetTwitchParams(newToken, clientID, defaultCredentials.clientSecret)
+		resp.Body.Close() //Close current request and send new one
+
+		resp, err = doGetTwitchUsersRequest("https://api.twitch.tv/helix/users", newToken, clientID)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+
+		//Still failed, return error
+		if resp.StatusCode != http.StatusOK {
+			return "", errors.New("unable to refresh user token. try resetting the bot.")
+		}
+	}
+
+	//Other failure status codes
 	if resp.StatusCode != http.StatusOK {
 		return "", errors.New("unknown error getting user info from twitch: " + http.StatusText(resp.StatusCode)) //TODO: Could be more specific based on response code
 	}
@@ -91,8 +111,6 @@ func GetTwitchInfoFromUserNames(userNames []string) ([]TwitchUser, error) {
 		return make([]TwitchUser, 0), nil
 	}
 
-	twitchClient := http.Client{}
-
 	//Twitch doesn't allow more than 100 users per request, so batch this
 	out := make([]TwitchUser, 0)
 	numBatches := math.Ceil(float64(len(userNames))/100.0)
@@ -113,25 +131,38 @@ func GetTwitchInfoFromUserNames(userNames []string) ([]TwitchUser, error) {
 		}
 		reqURL.RawQuery = query.Encode()
 
-		req, err := http.NewRequest("GET", reqURL.String(), nil)
-		if err != nil {
-			return nil, err
-		}
-
-		//Auth
-		authHeader := fmt.Sprintf("Bearer %s", defaultCredentials.userToken)
-		req.Header.Set("Authorization", authHeader)
-		req.Header.Set("Client-Id", defaultCredentials.clientID)
-
 		//Get response
-		resp, err := twitchClient.Do(req)
+		resp, err := doGetTwitchUsersRequest(reqURL.String(), defaultCredentials.userToken, defaultCredentials.clientID)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
 
-		//Check for errors
-		//TODO: Add a retry to attempt to refresh token.
+		//If we're unauthorized, try to get a refresh token
+		if resp.StatusCode == http.StatusUnauthorized {
+			newToken, err := auth.RefreshExpiredToken(defaultCredentials.clientID, defaultCredentials.clientSecret)
+			if err != nil {
+				//Failed refresh, return error
+				return nil, errors.New("unable to refresh twitch user token. try resetting the bot.")
+			}
+
+			//New token is valid. Save it and try the request again
+			SetTwitchParams(newToken, defaultCredentials.clientID, defaultCredentials.clientSecret)
+			resp.Body.Close() //Close current request and send new one
+
+			resp, err = doGetTwitchUsersRequest(reqURL.String(), newToken, defaultCredentials.clientID)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			//Still failed, return error
+			if resp.StatusCode != http.StatusOK {
+				return nil, errors.New("unable to refresh user token. try resetting the bot.")
+			}
+		}
+
+		//Check for other errors
 		if resp.StatusCode != http.StatusOK {
 			return nil, errors.New("unknown error getting user info from twitch: " + http.StatusText(resp.StatusCode)) //TODO: Could be more specific based on response code
 		}
@@ -147,7 +178,31 @@ func GetTwitchInfoFromUserNames(userNames []string) ([]TwitchUser, error) {
 		for _, o := range twitchUserResp.Data {
 			out = append(out, o)
 		}
+
+		resp.Body.Close() //Close just to not stack these deferred calls. Might as well since this is just a no-op if the body is already closed
 	}
 
 	return out, nil
+}
+
+//Helper for setting up a request to twitch users endpoint
+func doGetTwitchUsersRequest(uri string, userToken string, clientID string) (*http.Response, error){
+	//Create request
+	req, err := http.NewRequest("GET", uri, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	authHeader := fmt.Sprintf("Bearer %s", userToken)
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Client-Id", clientID)
+
+	//Get response
+	twitchClient := http.Client{}
+	resp, err := twitchClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }

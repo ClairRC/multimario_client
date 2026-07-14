@@ -401,3 +401,278 @@ func UpdateRaceStartTime(raceID int, newStartTime string) error {
 
 	return nil
 }
+
+//Increments player count. Returns new player count
+func IncrementPlayerCount(raceID int, playerName string, numToAdd int) (int, error) {
+	//Get Request body
+	body := map[string]any {
+		"delta_collected": numToAdd,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return -1, err
+	}
+
+	//Get Request
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return -1, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return -1, err
+	}
+
+	defer resp.Body.Close()
+
+	//Check response
+	var respMap map[string]any
+	err = json.NewDecoder(resp.Body).Decode(&respMap)
+	if err != nil {
+		return -1, err
+	}
+
+	//Parse response
+	success, ok := respMap["success"].(bool)
+	if !ok {
+		return -1, errors.New("unable to parse api response")
+	}
+
+	if !success {
+		apiErr, ok := respMap["error"].(string)
+		if !ok {
+			apiErr = "unknown failure with api response"
+		}
+		return -1, errors.New(apiErr)
+	}
+
+	//Success is true, return the number collected
+	newNum, ok := respMap["num_collected"].(float64)
+	if !ok {
+		return -1, errors.New("unable to parse new count as int")
+	}
+
+	return int(newNum), nil
+}
+
+//Sets player's count
+func SetPlayerCount(raceID int, playerName string, newNum int) (int, error) {
+	//Get Request body
+	body := map[string]any {
+		"num_collected": newNum,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return -1, err
+	}
+
+	//Get Request
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return -1, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return -1, err
+	}
+
+	defer resp.Body.Close()
+
+	//Check response
+	var respMap map[string]any
+	err = json.NewDecoder(resp.Body).Decode(&respMap)
+	if err != nil {
+		return -1, err
+	}
+
+	//Parse response
+	success, ok := respMap["success"].(bool)
+	if !ok {
+		return -1, errors.New("unable to parse api response")
+	}
+
+	if !success {
+		apiErr, ok := respMap["error"].(string)
+		if !ok {
+			apiErr = "unknown failure with api response"
+		}
+		return -1, errors.New(apiErr)
+	}
+
+	//Success is true, return the number collected
+	updatedNum, ok := respMap["num_collected"].(float64)
+	if !ok {
+		return -1, errors.New("unable to parse new count as int")
+	}
+
+	return int(updatedNum), nil
+}
+
+func UpdatePlayerName(currentName string, newName string) error {
+	//Get Request body
+	body := map[string]any {
+		"display_name": newName,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	//Get Request
+	endpoint := fmt.Sprintf("%s/players/%s", ip+port, currentName)
+	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	//Check response
+	var respMap map[string]any
+	err = json.NewDecoder(resp.Body).Decode(&respMap)
+	if err != nil {
+		return err
+	}
+
+	//Parse response
+	success, ok := respMap["success"].(bool)
+	if !ok {
+		return errors.New("unable to parse api response")
+	}
+
+	if !success {
+		apiErr, ok := respMap["error"].(string)
+		if !ok {
+			apiErr = "unknown failure with api response"
+		}
+		return errors.New(apiErr)
+	}
+
+	return nil
+}
+
+func UpdatePlayerCategoryTime(raceID int, playerName string, categoryName string, newTime string) error {
+	//Get Request body
+	body := map[string]any {
+		"time": newTime,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	//Get Request
+	raceIDStr := strconv.Itoa(raceID)
+	endpoint := fmt.Sprintf("%s/records/%s/%s/runs/%s", ip+port, raceIDStr, playerName, categoryName)
+	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	//Check response
+	var respMap map[string]any
+	err = json.NewDecoder(resp.Body).Decode(&respMap)
+	if err != nil {
+		return err
+	}
+
+	//Parse response
+	success, ok := respMap["success"].(bool)
+	if !ok {
+		return errors.New("unable to parse api response")
+	}
+
+	if !success {
+		apiErr, ok := respMap["error"].(string)
+		if !ok {
+			apiErr = "unknown failure with api response"
+		}
+		return errors.New(apiErr)
+	}
+
+	return nil
+}
+
+func UpdatePlayerFinalTime(raceID int, playerName string, finalTime string) error {
+	//Get Request body
+	body := map[string]any {
+		"finish_time": finalTime,
+	}
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	//Get Request
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	//Check response
+	var respMap map[string]any
+	err = json.NewDecoder(resp.Body).Decode(&respMap)
+	if err != nil {
+		return err
+	}
+
+	//Parse response
+	success, ok := respMap["success"].(bool)
+	if !ok {
+		return errors.New("unable to parse api response")
+	}
+
+	if !success {
+		apiErr, ok := respMap["error"].(string)
+		if !ok {
+			apiErr = "unknown failure with api response"
+		}
+		return errors.New(apiErr)
+	}
+
+	return nil
+}
