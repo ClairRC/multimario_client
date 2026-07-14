@@ -16,6 +16,7 @@ import (
 type TwitchChatClient struct {
 	credentials *twitch.TwitchCredentials
 	conn *tls.Conn
+	writeChannel chan(string)
 }
 
 var Client = TwitchChatClient{}
@@ -58,6 +59,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 
 	//Add logic to make sure we are added to our own twitch chat
 	var selfAdded = false
+
 	for _, name := range targetRooms {
 		//TODO: Add a check to make sure that this doesn't fail silently.
 		if name == userName {
@@ -87,8 +89,8 @@ func (c *TwitchChatClient) ListenToChat(logChannel chan(string)) {
 	logChannel <- "Listening to Twitch chat..."
 
 	//Create write channel and begin goroutine for writes
-	writeC := make(chan(string))
-	go writeToConnection(c.conn, writeC)
+	c.writeChannel = make(chan(string))
+	go c.writeToConnection()
 
 	//Create scanner for listening
 	scanner := bufio.NewScanner(c.conn)
@@ -97,7 +99,7 @@ func (c *TwitchChatClient) ListenToChat(logChannel chan(string)) {
 		line := scanner.Text()
 
 		//Parse Twitch line in a new goroutine
-		go ParseLine(line, writeC)
+		go c.ParseLine(line)
 	}
 }
 
@@ -122,7 +124,7 @@ func (c *TwitchChatClient) ConnectToUser(twitchRoom string) error {
 		return errors.New("bot not currently connected to twitch")
 	}
 
-	fmt.Fprintf(c.conn, "JOIN #%s\r\n", twitchRoom)
+	c.writeChannel <- fmt.Sprintf("JOIN #%s", strings.ToLower(twitchRoom))
 	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 
 	return nil
@@ -135,17 +137,17 @@ func (c *TwitchChatClient) DisconnectFromUser(twitchRoom string) error {
 	}
 
 	//Connect to rooms
-	fmt.Fprintf(c.conn, "PART #%s\r\n", twitchRoom)
+	c.writeChannel <- fmt.Sprintf("PART #%s", strings.ToLower(twitchRoom))
 	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 
 	return nil
 }
 
 //Takes a line of text and parses it
-func ParseLine(line string, responseC chan(string)) {
+func (c *TwitchChatClient) ParseLine(line string) {
 	//If this is a PING, PONG back
 	if strings.HasPrefix(line, "PING") {
-		responseC <- fmt.Sprintf("PONG %s\r\n", strings.TrimPrefix(line, "PING "))
+		c.writeChannel <- fmt.Sprintf("PONG %s\r\n", strings.TrimPrefix(line, "PING "))
 		return
 	} 
 
@@ -168,22 +170,22 @@ func ParseLine(line string, responseC chan(string)) {
 	//Don't write back if it is a command. Probably unnecessary, but don't chain commands
 	if res != "" && !isCommand(res) {
 		msg := fmt.Sprintf("%s", res)
-		writeToTwitchChat(msg, channelName, responseC)
+		c.writeToTwitchChat(msg, channelName)
 	}
 }
 
 //Writes a line to a specified twitch chat
-func writeToTwitchChat(message string, channelName string, writeC chan(string)) {
+func (c *TwitchChatClient) writeToTwitchChat(message string, channelName string) {
 	out := fmt.Sprintf("PRIVMSG #%s :%s", channelName, message)
-	writeC <- out
+	c.writeChannel <- out
 }
 
 //Writes a message to the IRC connection
-func writeToConnection(conn *tls.Conn, writeC chan(string)) {
+func (c* TwitchChatClient) writeToConnection() {
 	//TODO: Implement a cooldown to avoid rate limiting
 	for {
-		out := <-writeC
-		fmt.Fprintf(conn, "%s\r\n", out)
+		out := <-c.writeChannel
+		fmt.Fprintf(c.conn, "%s\r\n", out)
 	}
 }
 
@@ -222,6 +224,11 @@ func extractMessage(line string) string {
 
 //Takes twitch message and returns the channel the message was written in
 func extractChannelName(line string) string {
-	//TODO: Implement
-	return "clairdss"
+	parts := strings.Split(line, "PRIVMSG #")
+	channel := ""
+	if len(parts) > 0 {
+		channel = strings.Split(parts[1], " :")[0]
+	}
+
+	return channel
 }

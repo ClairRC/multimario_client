@@ -25,7 +25,7 @@ body {
 .header-info {
     display: flex;
     height: 18%;
-    margin-bottom: 1%;
+    margin-bottom: 0.5%;
 }
 
 .top-3 {
@@ -43,6 +43,7 @@ body {
     justify-content: center;
     column-gap: 1vw;
     row-gap: 0.8vw;
+    margin-bottom: 0.5%;
 }
 
 .stats-grid .player-box {
