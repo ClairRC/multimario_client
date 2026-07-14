@@ -466,6 +466,13 @@ func AddBlacklistUser(user string) {
 	organizerMu.Unlock()
 }
 
+//Removes a user from blacklist
+func RemoveBlacklistUser(user string) {
+	blacklistMu.Lock()
+	blacklist[user] = false
+	organizerMu.Unlock()
+}
+
 
 //Checks if a player is an organizer by twitch name
 func IsOnBlacklist(user string) bool {

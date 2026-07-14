@@ -77,5 +77,11 @@
 ### !starttimer
 - Resumes the on-stream timer
 
+### !blacklist [twitch_name]
+- Adds user to blacklist, preventing them from using any commands
+
+### !unblacklist [twitch_name]
+- Removes user from blacklist
+
 ### !addorganizer [twitch_name]
 - Adds a user as an organizer, allowing them to use the commands in this section.

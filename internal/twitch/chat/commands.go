@@ -16,6 +16,28 @@ import (
 var chatCommands = make(map[string]func([]string, string) string)
 var commandListURL = "https://github.com/ClairRC/multimario_client/blob/main/commandlist.md"
 
+//Removes user from blacklist
+func commandUnblacklistUser(args []string, sender string) string {
+	if len(args) != 1 || !store.IsOrganizer(sender) {
+		return ""
+	}
+
+	store.RemoveBlacklistUser(args[0])
+
+	return args[0] + " has been un-blacklisted"
+}
+
+//Adds user to blacklist
+func commandBlacklistUser(args []string, sender string) string {
+	if len(args) != 1 || !store.IsOrganizer(sender) {
+		return ""
+	}
+
+	store.AddBlacklistUser(args[0])
+
+	return args[0] + " has been blacklisted"
+}
+
 //Posts command list
 func commandMMHelp(args []string, sender string) string {
 	if len(args) != 0 {
@@ -470,4 +492,6 @@ func initCommands() {
 	chatCommands["!starttimer"] = commandStartTimer
 	chatCommands["!addorganizer"] = commandAddOrganizer
 	chatCommands["!mmhelp"] = commandMMHelp
+	chatCommands["!blacklist"] = commandBlacklistUser
+	chatCommands["!unblacklist"] = commandUnblacklistUser
 }
