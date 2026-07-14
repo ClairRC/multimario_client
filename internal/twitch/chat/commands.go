@@ -14,6 +14,16 @@ import (
 //Maps a command to a function to execute.
 //Function returns the response for this command
 var chatCommands = make(map[string]func([]string, string) string)
+var commandListURL = "https://github.com/ClairRC/multimario_client/blob/main/commandlist.md"
+
+//Posts command list
+func commandMMHelp(args []string, sender string) string {
+	if len(args) != 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("Command list: %s", commandListURL)
+}
 
 //Adds user as organizer
 func commandAddOrganizer(args []string, sender string) string {
@@ -459,4 +469,5 @@ func initCommands() {
 	chatCommands["!stoptimer"] = commandStopTimer
 	chatCommands["!starttimer"] = commandStartTimer
 	chatCommands["!addorganizer"] = commandAddOrganizer
+	chatCommands["!mmhelp"] = commandMMHelp
 }
