@@ -1,39 +1,159 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	categoryinfo "github.com/multimario_client/internal/category_info"
 	"github.com/multimario_client/internal/mmapi"
-	"github.com/multimario_client/internal/stats"
 	"github.com/multimario_client/internal/twitch"
 )
 
 //This package is a layer that handles orchestration between commands, local caching, and pushing updates to the stats stream.
 
 //For caching information about current race state
-type Store struct {
+type store struct {
 	mu sync.RWMutex
-	raceID int
-	players map[string]*stats.PlayerInfo
+	state *State
+	subscribers map[int]*subscriber
 	info *mmapi.RaceInfo
-	organizers map[string]bool
-	timerRunning bool
+	next int
 }
 
-var Race = &Store{raceID: -1, players: nil, info: nil}
+//Struct for sending full state to subscribers
+type State struct {
+	RaceID int
+	Players map[string]*PlayerInfo
+	Timer *TimerInfo
+	Category string
+}
+
+//Struct for sending updates to subscribers
+type Update struct {
+	Type UpdateType //Tracking type of update
+	Player *PlayerInfo
+	Game *GameInfo
+	Timer *TimerInfo
+}
+
+//Type of update metadata for subscribers
+type UpdateType int
+const (
+	All UpdateType = iota
+	PlayerCount
+	PlayerName
+	GameTime
+	FinalTime
+	PlayerStatus
+	StartTime
+	TimerState
+)
+
+//Struct for player info that gets sent to subscribers
+type PlayerInfo struct {
+	//Similar to mmapi.records, but adds some Twitch info for stats stream to use
+	NumCollected float64 `json:"num_collected"`
+	Player string `json:"player_name"`
+	PlayerTwitch string `json:"twitch_name"`
+	FinalTime string `json:"time"`
+	Estimate string `json:"estimate"`
+	Status string `json:"status"`
+	ProfilePictureURL string `json:"pfp_url"`
+}
+
+//Struct for game info for updates
+type GameInfo struct {
+	GameName string
+	GameTime string
+}
+
+//Struct for timer info for updates
+type TimerInfo struct {
+	TimerRunning bool
+	StartTime int64
+}
+
+//Subscriber information
+type subscriber struct {
+	id int
+	updateTypes map[UpdateType]bool
+	stateCh chan(State)
+	updateCh chan(Update) 
+}
+
+var Race = &store{
+	state: &State{RaceID: -1, Players: nil, Timer: &TimerInfo{false, time.Now().UnixMilli()}, Category: ""},
+	subscribers: make(map[int]*subscriber),
+	info: nil,
+	next: 0,
+}
+
 var noRaceLoadedErr error = errors.New("no race is currently loaded")
 
 var organizerMu sync.RWMutex
 var organizerList map[string]bool = map[string]bool{"clairdss": true}
 
 var blacklistMu sync.RWMutex
-var blacklist map[string]bool
+var blacklist map[string]bool = make(map[string]bool)
 
-func (s *Store) LoadRace(raceID int) error {
+func (s *store) Subscribe(ctx context.Context, updateTypes ...UpdateType) (chan(State), chan(Update), context.CancelFunc) {
+	//Channels
+	stateCh := make(chan(State), 5)
+	updateCh := make(chan(Update), 5)
+
+	s.mu.Lock()
+
+	//ID
+	newID := s.next
+	s.next++
+	
+	//Get types of updates this subscriber wants
+	types := make(map[UpdateType]bool)
+	if len(updateTypes) == 0 {
+		types[All] = true
+	} else {
+		for _, t := range updateTypes {
+			types[t] = true
+		}
+	}
+
+	//Get cancel function
+	subCtx, cancel := context.WithCancel(ctx)
+
+	//Make subscriber and add it to list
+	newSub := &subscriber{id: newID, updateTypes: types, updateCh: updateCh, stateCh: stateCh}
+	s.subscribers[newSub.id] = newSub
+
+	//Send copy of current state
+	newSub.stateCh <- *s.state
+	s.mu.Unlock()
+
+	//Check for cancellation
+	go func() {
+		<-subCtx.Done()
+		s.unsubscribe(newSub.id)
+	}()
+
+	return newSub.stateCh, newSub.updateCh, cancel
+}
+
+func (s *store) unsubscribe(id int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sub, ok := s.subscribers[id]; ok {
+		close(sub.stateCh)
+		close(sub.updateCh)
+		delete(s.subscribers, id)
+	}
+}
+
+func (s *store) LoadRace(raceID int) error {
 	//Get race info from the backend
 	raceInfo, err := mmapi.GetRaceFromID(raceID)
 	if err != nil {
@@ -48,11 +168,11 @@ func (s *Store) LoadRace(raceID int) error {
 
 	//Use these records to get necessary twitch information
 	playerNames := make([]string, 0) //Slice to get twitch info
-	playerNameMap := make(map[string]*stats.PlayerInfo) //Map to append new twitch info
+	playerNameMap := make(map[string]*PlayerInfo) //Map to append new twitch info
 	for _, p := range players {
 		playerNames = append(playerNames, p.PlayerTwitch)
 		//Add incomplete playerInfo to the map
-		playerNameMap[p.PlayerTwitch] = &stats.PlayerInfo{
+		playerNameMap[p.PlayerTwitch] = &PlayerInfo{
 			NumCollected: p.NumCollected,
 			Player: p.Player,
 			PlayerTwitch: p.PlayerTwitch,
@@ -70,32 +190,36 @@ func (s *Store) LoadRace(raceID int) error {
 	//Fill in the blanks
 	for _, u := range twitchUsers {
 		pInfo := playerNameMap[u.Login]
-		pInfo.ProfilePictureURL = u.ProfilePictureURL 
-	}
-
-	//Add each value into a slice
-	recordsSlice := make([]stats.PlayerInfo, 0)
-	for v := range maps.Values(playerNameMap) {
-		recordsSlice = append(recordsSlice, *v)
+		if pInfo != nil {
+			pInfo.ProfilePictureURL = u.ProfilePictureURL 
+		}
 	}
 
 	//Saves information for this race in the current store
+	//TODO: Add functionality for loading cached state from json perchance
+	newState := &State{
+		RaceID: raceID,
+		Players: playerNameMap,
+		Timer: &TimerInfo{false, time.Now().UnixMilli()},
+		Category: raceInfo.Category,
+	}
 	s.mu.Lock()
-	s.raceID = raceID
-	s.players = playerNameMap
+	defer s.mu.Unlock()
+	s.state = newState
 	s.info = raceInfo
-	s.mu.Unlock()
 
-	//Loads race information to begin tracking
-	err = stats.StartTrackingRace(raceID, recordsSlice, raceInfo.Category, "00:00:00", true)
-	if err != nil {
-		return err
+	//Send new state to subscribers
+	for _, sub := range s.subscribers {
+		select {
+			case sub.stateCh <- *newState:
+			default:
+		}
 	}
 
 	return nil
 }
 
-func (s *Store) GetRacerTwitchChannels() ([]string, error) {
+func (s *store) GetRacerTwitchChannels() ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.raceIsLoaded() {
@@ -103,7 +227,7 @@ func (s *Store) GetRacerTwitchChannels() ([]string, error) {
 	}
 
 	out := make([]string, 0)
-	for p := range maps.Values(s.players) {
+	for p := range maps.Values(s.state.Players) {
 		out = append(out, p.PlayerTwitch)
 	}
 
@@ -111,14 +235,14 @@ func (s *Store) GetRacerTwitchChannels() ([]string, error) {
 }
 
 //Adds to player's count. Returns new number of collectibles
-func (s *Store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error) {
+func (s *store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error) {
     s.mu.RLock()
     if !s.raceIsLoaded() {
         s.mu.RUnlock()
         return -1, noRaceLoadedErr
     }
-    p, ok := s.players[playerTwitch]
-    raceID := s.raceID
+    p, ok := s.state.Players[playerTwitch]
+    raceID := s.state.RaceID
     s.mu.RUnlock()
     if !ok {
         return -1, errors.New("player is not in this race")
@@ -130,24 +254,43 @@ func (s *Store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error)
     }
 
     s.mu.Lock()
-    p.NumCollected = float64(newNum)
-    s.mu.Unlock()
+	defer s.mu.Unlock()
 
-    if err := stats.UpdatePlayerCount(p.PlayerTwitch, newNum); err != nil {
-        return -1, err
-    }
+	//Re-check these after locking again
+	p, ok = s.state.Players[playerTwitch]
+	if !ok || raceID != s.state.RaceID {
+		return -1, errors.New("state changed while changing player count")
+	}
+
+    p.NumCollected = float64(newNum)
+
+    //Send this update
+	ud := Update{
+		Type: PlayerCount,
+		Player: p,
+		Game: nil,
+		Timer: nil,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[PlayerCount] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
 
     return newNum, nil
 }
 
-func (s *Store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
+func (s *store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
 	s.mu.RLock()
     if !s.raceIsLoaded() {
         s.mu.RUnlock()
         return -1, noRaceLoadedErr
     }
-    p, ok := s.players[playerTwitch]
-    raceID := s.raceID
+    p, ok := s.state.Players[playerTwitch]
+    raceID := s.state.RaceID
     s.mu.RUnlock()
     if !ok {
         return -1, errors.New("player is not in this race")
@@ -159,32 +302,51 @@ func (s *Store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
     }
 
     s.mu.Lock()
-    p.NumCollected = float64(newNum)
-    s.mu.Unlock()
+	defer s.mu.Unlock()
 
-    if err := stats.UpdatePlayerCount(p.PlayerTwitch, newNum); err != nil {
-        return -1, err
-    }
+	//Re-check these after locking again
+	p, ok = s.state.Players[playerTwitch]
+	if !ok || raceID != s.state.RaceID {
+		return -1, errors.New("state changed while changing player count")
+	}
+
+    p.NumCollected = float64(newNum)
+
+	//Send update
+    ud := Update{
+		Type: PlayerCount,
+		Player: p,
+		Game: nil,
+		Timer: nil,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[PlayerCount] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
 
     return newNum, nil
 }
 
 //Gets actual player name from their Twitch
-func (s *Store) GetPlayerNameFromTwitch(playerTwitchName string) (string, error) {
+func (s *store) GetPlayerNameFromTwitch(playerTwitchName string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.raceIsLoaded() {
 		return "", noRaceLoadedErr
 	}
 
-	if s.players[playerTwitchName] == nil {
+	if s.state.Players[playerTwitchName] == nil {
 		return "", errors.New("player not in this race")
 	}
 
-	return s.players[playerTwitchName].Player, nil
+	return s.state.Players[playerTwitchName].Player, nil
 }
 
-func (s *Store) UpdatePlayerName(playerTwitchName string, newName string) error {
+func (s *store) UpdatePlayerName(playerTwitchName string, newName string) error {
 	//Get player name. Use their display name if possible
 	//This isn't necessary but it's faster for the API, but that's another can of worms
 	currentName := playerTwitchName
@@ -192,7 +354,7 @@ func (s *Store) UpdatePlayerName(playerTwitchName string, newName string) error 
 
 	s.mu.RLock()
 	if s.raceIsLoaded() {
-		player, ok := s.players[playerTwitchName]
+		player, ok := s.state.Players[playerTwitchName]
 		if ok {
 			currentName = player.Player
 			playerInLoadedRace = true
@@ -209,24 +371,41 @@ func (s *Store) UpdatePlayerName(playerTwitchName string, newName string) error 
 	//If player is in race, update it
 	if playerInLoadedRace {
 		s.mu.Lock()
-		if p, ok := s.players[playerTwitchName]; ok {
+		if p, ok := s.state.Players[playerTwitchName]; ok {
 			p.Player = newName
 		}
 		s.mu.Unlock()
 	}
 
-	//Update stats stream
-	err = stats.UpdatePlayerName(playerTwitchName, newName)
-	if err != nil {
-		return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	//Send update if this player is in the store
+	if p, ok := s.state.Players[playerTwitchName]; ok {
+		ud := Update{
+			Type: PlayerName,
+			Player: p,
+			Game: nil,
+			Timer: nil,
+		}
+
+		for _, sub := range s.subscribers {
+			if sub.updateTypes[All] || sub.updateTypes[PlayerName] {
+				select {
+				case sub.updateCh <- ud:
+				default:
+				}
+			}
+		}
 	}
+
 	return nil
 }
 
-func (s *Store) UpdateGameTime(playerTwitchName string, gameName string, newTime string) error {
-	s.mu.RLock()
+func (s *store) UpdateGameTime(playerTwitchName string, gameName string, newTime string) error {
+	s.mu.Lock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return noRaceLoadedErr
 	}
 
@@ -235,24 +414,58 @@ func (s *Store) UpdateGameTime(playerTwitchName string, gameName string, newTime
 	currentName := playerTwitchName
 
 	if s.raceIsLoaded() {
-		player, ok := s.players[playerTwitchName]
+		player, ok := s.state.Players[playerTwitchName]
 		if ok {
 			currentName = player.Player
 		}
 	}
 
-	//Get the game category
 	gameCatName := categoryinfo.GetGameCategoryFromGameName(s.info.Category, gameName)
-	raceID := s.raceID
-	s.mu.RUnlock()
+	raceID := s.state.RaceID
+	s.mu.Unlock()
 
 	//Send the update to the backend
 	err := mmapi.UpdatePlayerCategoryTime(raceID, currentName, gameCatName, newTime)
-	
-	return err
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	//Check again for stale state
+	if !s.raceIsLoaded() {
+		return noRaceLoadedErr
+	}
+
+	//If race ID or game name has changed, return
+	if raceID != s.state.RaceID || gameCatName != categoryinfo.GetGameCategoryFromGameName(s.info.Category, gameName) {
+		return errors.New("race state changed during update")
+	}
+
+	//Send update to subscribers
+	ud := Update{
+		Type: GameTime,
+		Player: nil,
+		Timer: nil,
+		Game: &GameInfo{
+			GameName: gameCatName,
+			GameTime: newTime,
+		},
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[GameTime] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
+
+	return nil
 }
 
-func (s *Store) UpdateFinalTime(playerTwitchName string, newTime string) error {
+func (s *store) UpdateFinalTime(playerTwitchName string, newTime string) error {
 	s.mu.RLock()
 	if !s.raceIsLoaded() {
 		s.mu.RUnlock()
@@ -265,13 +478,13 @@ func (s *Store) UpdateFinalTime(playerTwitchName string, newTime string) error {
 	playerInLoadedRace := false
 
 	if s.raceIsLoaded() {
-		player, ok := s.players[playerTwitchName]
+		player, ok := s.state.Players[playerTwitchName]
 		if ok {
 			currentName = player.Player
 			playerInLoadedRace = true
 		}
 	}
-	raceID := s.raceID
+	raceID := s.state.RaceID
 	s.mu.RUnlock()
 
 	//Send the update to the backend
@@ -283,162 +496,226 @@ func (s *Store) UpdateFinalTime(playerTwitchName string, newTime string) error {
 	//Update player's time and send it to the stats page if they are in the loaded race
 	if playerInLoadedRace {
 		s.mu.Lock()
-		if p, ok := s.players[playerTwitchName]; ok {
+		if p, ok := s.state.Players[playerTwitchName]; ok {
 			p.FinalTime = newTime
+			ud := Update{
+				Type: FinalTime,
+				Player: p,
+				Game: nil,
+				Timer: nil,
+			}
+
+			for _, sub := range s.subscribers {
+				if sub.updateTypes[All] || sub.updateTypes[FinalTime] {
+					select{
+					case sub.updateCh <- ud:
+					default:
+					}
+				}
+			}
 		}
 		s.mu.Unlock()
-
-		err = stats.UpdatePlayerFinalTime(playerTwitchName, newTime)
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
 }
 
 //Sets player's status to quit
-func (s *Store) SetToQuit(playerTwitchName string) error {
-	s.mu.RLock()
+func (s *store) SetToQuit(playerTwitchName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
 		return noRaceLoadedErr
 	}
 
 	//Only do this if the racer is in the race
-	p, ok := s.players[playerTwitchName]
-	s.mu.RUnlock()
-
+	p, ok := s.state.Players[playerTwitchName]
 	if !ok {
 		return fmt.Errorf("%s is not in this race", playerTwitchName)
 	}
-
-	s.mu.Lock()
 	p.Status = "Forfeit"
-	s.mu.Unlock()
-
-	//Get the lock again
-	s.mu.RLock()
-	p, ok = s.players[playerTwitchName]
-	newStatus := p.Status
-
-	stats.SetPlayerStatus(playerTwitchName, newStatus)
-	s.mu.RUnlock()
+	
+	//Send update
+	ud := Update{
+		Type: PlayerStatus,
+		Player: p,
+		Timer: nil,
+		Game: nil,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[PlayerStatus] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
 
 	return nil
 }
 
 //Sets player's status to not quit (running)
-func (s *Store) SetToRunning(playerTwitchName string) error {
-	s.mu.RLock()
+func (s *store) SetToRunning(playerTwitchName string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
 		return noRaceLoadedErr
 	}
 
 	//Only do this if the racer is in the race
-	p, ok := s.players[playerTwitchName]
-	s.mu.RUnlock()
-
+	p, ok := s.state.Players[playerTwitchName]
 	if !ok {
 		return fmt.Errorf("%s is not in this race", playerTwitchName)
 	}
-
-	s.mu.Lock()
 	p.Status = "running"
-	s.mu.Unlock()
-
-	//Get the lock again
-	s.mu.RLock()
-	p, ok = s.players[playerTwitchName]
-	newStatus := p.Status
-
-	stats.SetPlayerStatus(playerTwitchName, newStatus)
-	s.mu.RUnlock()
+	
+	//Send update
+	ud := Update{
+		Type: PlayerStatus,
+		Player: p,
+		Timer: nil,
+		Game: nil,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[PlayerStatus] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
 
 	return nil
 }
 
 //Sets player's status to custom value
-func (s *Store) SetPlayerStatus(playerTwitchName string, newStatus string) error {
-	s.mu.RLock()
+func (s *store) SetPlayerStatus(playerTwitchName string, newStatus string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
 		return noRaceLoadedErr
 	}
 
 	//Only do this if the racer is in the race
-	p, ok := s.players[playerTwitchName]
-	s.mu.RUnlock()
-
+	p, ok := s.state.Players[playerTwitchName]
 	if !ok {
 		return fmt.Errorf("%s is not in this race", playerTwitchName)
 	}
-
-	s.mu.Lock()
 	p.Status = newStatus
-	s.mu.Unlock()
-
-
-	//Get the lock again
-	s.mu.RLock()
-	p, ok = s.players[playerTwitchName]
-	confirmedNewStatus := p.Status
-
-	stats.SetPlayerStatus(playerTwitchName, confirmedNewStatus)
-	s.mu.RUnlock()
+	
+	//Send update
+	ud := Update{
+		Type: PlayerStatus,
+		Player: p,
+		Timer: nil,
+		Game: nil,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[PlayerStatus] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
+	}
 
 	return nil
 }
 
 //Sets player's status to custom value
-func (s *Store) SetTimerValue(newTimerValue string) error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func (s *store) SetTimerValue(newTimerValue string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
 		return noRaceLoadedErr
 	}
 
-	err := stats.UpdateTimerValue(newTimerValue)
+	//Get start time from timer value
+	newSTime, err := getStartTimeFromTimeString(newTimerValue)
 	if err != nil {
-		return err
+		return err //No changes
+	}
+	s.state.Timer.StartTime = newSTime
+
+	//Send update
+	ud := Update{
+		Type: StartTime,
+		Player: nil,
+		Game: nil,
+		Timer: s.state.Timer,
+	}
+	for _, sub := range s.subscribers {
+		if sub.updateTypes[All] || sub.updateTypes[StartTime] {
+			select {
+			case sub.updateCh <- ud:
+			default:
+			}
+		}
 	}
 
 	return nil
 }
 
 //Stops the timer
-func (s *Store) StopTimer() error {
-	s.mu.RLock()
+func (s *store) StopTimer() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
 		return noRaceLoadedErr
 	}
-	s.mu.RUnlock()
 
-	//Set the current value to be started
-	s.mu.Lock()
-	s.timerRunning = false
-	stats.UpdateTimerState(false)
-	s.mu.Unlock()
+	//Update the timer if necessary
+	if s.state.Timer.TimerRunning {
+		s.state.Timer.TimerRunning = false
+		
+		//Send the update
+		ud := Update{
+			Type: TimerState,
+			Player: nil,
+			Game: nil,
+			Timer: s.state.Timer,
+		}
+		for _, sub := range s.subscribers {
+			if sub.updateTypes[All] || sub.updateTypes[TimerState] {
+				select {
+				case sub.updateCh <- ud:
+				default:
+				}
+			}
+		}
+	}
 
 	return nil
 }
 
 //Starts the timer
-func (s *Store) StartTimer() error {
-	s.mu.RLock()
+func (s *store) StartTimer() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if !s.raceIsLoaded() {
-		s.mu.RUnlock()
 		return noRaceLoadedErr
 	}
-	s.mu.RUnlock()
 
-	//Set the current value to be started
-	s.mu.Lock()
-	s.timerRunning = true
-	stats.UpdateTimerState(true)
-	s.mu.Unlock()
+	//Update the timer if necessary
+	if !s.state.Timer.TimerRunning {
+		s.state.Timer.TimerRunning = true
+		
+		//Send the update
+		ud := Update{
+			Type: TimerState,
+			Player: nil,
+			Game: nil,
+			Timer: s.state.Timer,
+		}
+		for _, sub := range s.subscribers {
+			if sub.updateTypes[All] || sub.updateTypes[TimerState] {
+				select {
+				case sub.updateCh <- ud:
+				default:
+				}
+			}
+		}
+	}
 
 	return nil
 }
@@ -463,14 +740,14 @@ func IsOrganizer(playerTwitchName string) bool {
 func AddBlacklistUser(user string) {
 	blacklistMu.Lock()
 	blacklist[user] = true
-	organizerMu.Unlock()
+	blacklistMu.Unlock()
 }
 
 //Removes a user from blacklist
 func RemoveBlacklistUser(user string) {
 	blacklistMu.Lock()
 	blacklist[user] = false
-	organizerMu.Unlock()
+	blacklistMu.Unlock()
 }
 
 
@@ -483,7 +760,7 @@ func IsOnBlacklist(user string) bool {
 }
 
 //Getter for getting current race category
-func (s *Store) GetCurrentRaceCategory() (string, error) {
+func (s *store) GetCurrentRaceCategory() (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.raceIsLoaded() {
@@ -492,12 +769,76 @@ func (s *Store) GetCurrentRaceCategory() (string, error) {
 	return s.info.Category, nil
 }
 
+//Gets mmapi raceinfo for control panel
+func (s *store) GetStoredRaceInfo() (*mmapi.RaceInfo) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.info
+}
+
+func (s *store) GetCurrentRaceID() (int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.state.RaceID
+}
+
+//Updates status of current race
+func (s *store) UpdateRaceStatus(newStatus string) error {
+	//Start the race
+	s.mu.RLock()
+	raceID := s.state.RaceID
+	s.mu.RUnlock()
+
+	err := mmapi.UpdateRaceStatus(s.state.RaceID, newStatus)
+	if err != nil {
+		return err
+	}
+
+	//Update race cache
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if raceID != s.state.RaceID {
+		return errors.New("race state changed during update")
+	}
+	s.info.Status = newStatus
+
+	return nil
+}
+
 
 //Helper to check that a race is loaded
-func (s *Store) raceIsLoaded() bool {
-	if s.raceID == -1 || s.players == nil {
+func (s *store) raceIsLoaded() bool {
+	if s.state.RaceID == -1 || s.state.Players == nil {
 		return false
 	}
 
 	return true
+}
+
+//Gets start time in unix millis from timer string
+func getStartTimeFromTimeString(timeString string) (int64, error) {
+	//Parse timer values
+	parts := strings.Split(timeString, ":")
+	if len(parts) != 3 {
+		return -1, errors.New("not a valid time string")
+	}
+
+	hoursNum, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return -1, err
+	}
+
+	minutesNum, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return -1, err
+	}
+
+	secondsNum, err := strconv.Atoi(parts[2])
+	if err != nil {
+		return -1, err
+	}
+
+	totalMillis := int64(hoursNum) * 3600 * 1000 + int64(minutesNum) * 60 * 1000 + int64(secondsNum) * 1000
+	startTime := time.Now().UnixMilli() - totalMillis //Get start time in millis
+	return startTime, nil
 }

@@ -1,6 +1,8 @@
 package controlpanel
 
-import "net/http"
+import (
+	"net/http"
+)
 
 //Package for handling the web-based control panel that the end user can use
 

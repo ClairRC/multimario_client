@@ -8,6 +8,7 @@ import (
 	"github.com/multimario_client/internal/controlpanel"
 	"github.com/multimario_client/internal/mmapi"
 	"github.com/multimario_client/internal/stats"
+	"github.com/multimario_client/internal/store"
 	"github.com/multimario_client/internal/twitch"
 	"github.com/multimario_client/internal/twitch/auth"
 	"github.com/multimario_client/internal/twitch/chat"
@@ -39,6 +40,17 @@ func main() {
 	//Set twitch parameters
 	twitch.SetTwitchParams(token, settings.TwitchClientID, settings.TwitchClientSecret)
 	chat.Client.SetTwitchConnectionParams(twitch.GetTwitchParams())
+
+	//Check if there's an in progress race and if so store that
+	race, err := mmapi.GetInProgressRace()
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	//Store race if it exists
+	if race != nil {
+		store.Race.LoadRace(int(race.ID))
+	}
 
 	//Initialize control panel
 	go controlpanel.InitControlPanel()

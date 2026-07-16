@@ -6,9 +6,14 @@ const listeners = {
     update: [],
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 //Setup API stuff
 setup()
 async function setup() {
+    //Wait a few milliseconds to prevent rapid refreshing messing up the SSE connection
+    //I am CERTAIN there is a better solution but if there is i can't figure it out so sorry about the 100ms delay
+    await sleep(100)
     await setupSSE()
 }
 

@@ -142,6 +142,7 @@ async function handleDisconnectFromTwitchButton(event) {
     updateUI()
 }
 
+
 //Register button event listeners
 selectUpcomingRaceButton.addEventListener('click', handleSelectUpcomingRaceButton)
 selectPastRaceButton.addEventListener('click', handleSelectPastRaceButton)

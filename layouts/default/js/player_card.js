@@ -14,6 +14,7 @@ export function getPlayerCard(playerDisplayName, playerTwitchName, playerPos, pf
                 <p class="user-position">${playerPos}</p>
             </div>
             <div class="progress">
+                    <img class="icon" src="${category.getCurrentIconImage(raceCategory, numCollectibles)}" style="display: none;">
                     <p class="quit-text" style="display: inline; margin-left: 4%; font-size: 2em;">${playerStatus}</p>
                     <p class="game-progress" style="display: none; color: white; margin-left: 2%; font-size: 2em;"></p>
                     <p class="numeric-progress" style="color: white; font-size: 1em; text-align: right;">${toFrac(Math.min(numCollectibles, category.getTotalCollectibles(raceCategory)),category.getTotalCollectibles(raceCategory))}</p>
@@ -77,6 +78,10 @@ export function updatePlayerPlacement(playerTwitchName, newPlacement) {
 
 export function updateCardImages(playerTwitchName, numCollected, raceCategory, playerStatus) {
     var card = document.getElementById(playerTwitchName)
+    if (card.className == "placeholder") {
+        return
+    }
+
     var cardIcon = card.querySelector(".icon")
 
     if (playerStatus !== "running") {
@@ -86,9 +91,6 @@ export function updateCardImages(playerTwitchName, numCollected, raceCategory, p
         return
     }
 
-    if (card.className == "placeholder") {
-        return
-    }
     card.style.setProperty('--bg-image', `url('${category.getCurrentBackgroundImage(raceCategory, numCollected)}')`);
     cardIcon.style.display = "block"
     cardIcon.src = category.getCurrentIconImage(raceCategory, numCollected)

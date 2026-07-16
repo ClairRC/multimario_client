@@ -88,11 +88,8 @@ func sendInProgressRace(w http.ResponseWriter, r *http.Request) {
 	//Get in progress race
 	w.Header().Set("Content-Type", "application/json")
 
-	race, err := mmapi.GetInProgressRace()
-	if err != nil {
-		logMessage(fmt.Sprintf("ERROR: %s", err.Error()))
-		return
-	}
+	//Get stored race
+	race := store.Race.GetStoredRaceInfo()
 
 	//Get output
 	out := make(map[string]any)
@@ -182,6 +179,7 @@ func disconnectFromTwitchChat(w http.ResponseWriter, r *http.Request) {
 */
 func startRace(w http.ResponseWriter, r *http.Request) {
 	//Set new status to in_progress and pass off to helper function
+	store.Race.StartTimer()
 	updateRaceStatus(w, r, "in_progress")
 }
 
@@ -191,6 +189,7 @@ func startRace(w http.ResponseWriter, r *http.Request) {
 */
 func finishRace(w http.ResponseWriter, r *http.Request) {
 	//Set new status to completed
+	store.Race.StopTimer()
 	updateRaceStatus(w, r, "completed")
 }
 
@@ -200,31 +199,13 @@ func finishRace(w http.ResponseWriter, r *http.Request) {
 */
 func resetRace(w http.ResponseWriter, r *http.Request) {
 	//Set new status to upcoming
+	store.Race.StopTimer()
 	updateRaceStatus(w, r, "upcoming")
 }
 
 //Helper for updating race status since multiple endpoints will do this
 func updateRaceStatus(w http.ResponseWriter, r *http.Request, newStatus string) {
-	//Gets value from URL
-	urlIDs := r.URL.Query()["race_id"]
-	if len(urlIDs) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": "missing race id"})
-		return
-	}
-
-	//This endpoint will only accept 1 race, so throw out the rest
-	raceID, err := strconv.Atoi(urlIDs[0])
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
-		return
-	}
-
-	//Start the race
-	err = mmapi.UpdateRaceStatus(raceID, newStatus)
+	err := store.Race.UpdateRaceStatus(newStatus)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -233,7 +214,7 @@ func updateRaceStatus(w http.ResponseWriter, r *http.Request, newStatus string) 
 	}
 
 	//No errors
-	logMessage(fmt.Sprintf("Race %v status has been updated to \"%s\"", raceID, newStatus))
+	logMessage(fmt.Sprintf("Race %v status has been updated to \"%s\"", store.Race.GetCurrentRaceID(), newStatus))
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any {"success": true})
 }

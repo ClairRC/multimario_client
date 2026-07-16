@@ -4,10 +4,12 @@ package chat
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/multimario_client/internal/twitch"
@@ -17,16 +19,20 @@ type TwitchChatClient struct {
 	credentials *twitch.TwitchCredentials
 	conn *tls.Conn
 	writeChannel chan(string)
+	cancel context.CancelFunc
+	mu sync.RWMutex
 }
 
 var Client = TwitchChatClient{}
 
 func (c *TwitchChatClient) SetTwitchConnectionParams(params *twitch.TwitchCredentials) {
-	Client.credentials = params
+	c.credentials = params
 }
 
 
 func (c *TwitchChatClient) IsConnectedToTwitch() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.conn != nil
 }
 
@@ -38,12 +44,50 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	* depend on this TLS connection.
 	*/
 
+	//If there is already a goroutine with a connection, cancel it
+	c.mu.Lock()
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.conn != nil {
+		c.conn.Close()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cancel = cancel
+	c.mu.Unlock()
+
+
 	conn, err := tls.Dial("tcp", "irc.chat.twitch.tv:6697", &tls.Config{})
 	if err != nil {
 		logChannel <- err.Error()
+		c.mu.Lock()
+		if c.conn == conn {
+			cancel()
+			c.conn = nil
+			c.writeChannel = nil
+			c.cancel = nil
+		}
+		c.mu.Unlock()
+		conn.Close()
 		return
 	}
+
+	//Create write channel for this connection
+	writeChannel := make(chan(string), 200)
+
+	//A new connection was started, close this one
+	c.mu.Lock()
+	select {
+	case <-ctx.Done():
+		c.mu.Unlock()
+		conn.Close()
+		return //Return because a newer connection is present
+	default:
+	}
+
 	c.conn = conn
+	c.writeChannel = writeChannel
+	c.mu.Unlock()
 
 	//Get Twitch name from user token
 	userName, err := twitch.GetUserNameFromToken(c.credentials.UserToken(), c.credentials.ClientID())
@@ -52,7 +96,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 		return
 	}
 
-	//Connect to rooms
+	//Write to this connection
 	fmt.Fprintf(conn, "CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
 	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.credentials.UserToken())
 	fmt.Fprintf(conn, "NICK %s\r\n", userName)
@@ -81,73 +125,102 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	initCommands()
 
 	//After connecting, listen on this connection and return from this goroutine
-	go c.ListenToChat(logChannel)
+	go c.ListenToChat(ctx, conn, writeChannel, logChannel)
 }
 
 //Listens to Twitch chat and creates a channel for writing
-func (c *TwitchChatClient) ListenToChat(logChannel chan(string)) {
+func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, writeChannel chan(string), logChannel chan(string)) {
 	logChannel <- "Listening to Twitch chat..."
 
-	//Create write channel and begin goroutine for writes
-	c.writeChannel = make(chan(string))
-	go c.writeToConnection()
+	go c.writeToConnection(ctx, conn, writeChannel)
 
 	//Create scanner for listening
-	scanner := bufio.NewScanner(c.conn)
+	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
+		//Check if this connection is still current before reading from it
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		//Get message from Twitch chat
 		line := scanner.Text()
 
 		//Parse Twitch line in a new goroutine
-		go c.ParseLine(line)
+		go c.ParseLine(line, writeChannel)
 	}
 }
 
 //Disconnects from twitch chat
 func (c *TwitchChatClient) DisconnectFromChat(logChannel chan(string)) error {
 	logChannel <- "Disconnecting from Twitch Chat..."
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	//Connection is nil, nothing more to do here
+	//Nil connection, nothing else to do
 	if c.conn == nil {
 		return nil
 	}
 
+	//Cancel this connection if it exists
+	if c.cancel != nil {
+		c.cancel()
+	}
 	err := c.conn.Close()
 	c.conn = nil
+	c.cancel = nil
+	c.writeChannel = nil
 
 	return err
 }
 
 //Connects to specific user's chat
 func (c *TwitchChatClient) ConnectToUser(twitchRoom string) error {
-	if c.conn == nil {
+	c.mu.RLock()
+	writeCh, conn := c.writeChannel, c.conn
+	c.mu.RUnlock()
+	if conn == nil {
 		return errors.New("bot not currently connected to twitch")
 	}
 
-	c.writeChannel <- fmt.Sprintf("JOIN #%s", strings.ToLower(twitchRoom))
-	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
-
-	return nil
+	//Attempt to write to channel if it's open, otherwise return
+	select {
+	case writeCh <- fmt.Sprintf("JOIN #%s", strings.ToLower(twitchRoom)):
+		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+		return nil
+	default: 
+		return errors.New("not connected, or too many messages pending")
+	}
 }
 
 //Disconnects from specific user's chat
 func (c *TwitchChatClient) DisconnectFromUser(twitchRoom string) error {
-	if c.conn == nil {
+	c.mu.RLock()
+	writeCh, conn := c.writeChannel, c.conn
+	c.mu.RUnlock()
+	if conn == nil {
 		return errors.New("bot not currently connected to twitch")
 	}
 
 	//Connect to rooms
-	c.writeChannel <- fmt.Sprintf("PART #%s", strings.ToLower(twitchRoom))
-	time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
-
-	return nil
+	select {
+	case writeCh <- fmt.Sprintf("PART #%s", strings.ToLower(twitchRoom)):
+		//Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+		time.Sleep(500 * time.Millisecond)
+		return nil
+	default:
+		return errors.New("not connected, or too many messages pending")
+	}
 }
 
 //Takes a line of text and parses it
-func (c *TwitchChatClient) ParseLine(line string) {
+func (c *TwitchChatClient) ParseLine(line string, writeChannel chan(string)) {
 	//If this is a PING, PONG back
 	if strings.HasPrefix(line, "PING") {
-		c.writeChannel <- fmt.Sprintf("PONG %s\r\n", strings.TrimPrefix(line, "PING "))
+		select {
+		case writeChannel <- fmt.Sprintf("PONG %s\r\n", strings.TrimPrefix(line, "PING ")):
+		default:
+		}
 		return
 	} 
 
@@ -170,22 +243,29 @@ func (c *TwitchChatClient) ParseLine(line string) {
 	//Don't write back if it is a command. Probably unnecessary, but don't chain commands
 	if res != "" && !isCommand(res) {
 		msg := fmt.Sprintf("%s", res)
-		c.writeToTwitchChat(msg, channelName)
+		c.writeToTwitchChat(msg, channelName, writeChannel)
 	}
 }
 
 //Writes a line to a specified twitch chat
-func (c *TwitchChatClient) writeToTwitchChat(message string, channelName string) {
+func (c *TwitchChatClient) writeToTwitchChat(message string, channelName string, writeCh chan(string)) {
 	out := fmt.Sprintf("PRIVMSG #%s :%s", channelName, message)
-	c.writeChannel <- out
+	select {
+	case writeCh <- out:
+	default:
+	}
 }
 
 //Writes a message to the IRC connection
-func (c* TwitchChatClient) writeToConnection() {
+func (c* TwitchChatClient) writeToConnection(ctx context.Context, conn *tls.Conn, writeChannel chan(string)) {
 	//TODO: Implement a cooldown to avoid rate limiting
 	for {
-		out := <-c.writeChannel
-		fmt.Fprintf(c.conn, "%s\r\n", out)
+		select {
+		case <-ctx.Done():
+			return //Connection is no longer current, return
+		case out := <-writeChannel:
+			fmt.Fprintf(conn, "%s\r\n", out)
+		}
 	}
 }
 
