@@ -52,9 +52,7 @@ onInit((data) => {
     var playerRecords = data.records
 
     //First, sort by rank to get placement
-    var placementMap = {}
-    playerRecords.sort(orderRankComparator)
-    playerRecords.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
+    var placementMap = getPlacementMap(playerRecords)
     
     //Next, sort by display order
     playerRecords.sort(orderDisplayComparator)
@@ -250,8 +248,7 @@ function updatePlayerCards() {
         .slice()
     realRecordsSorted.sort(orderRankComparator)
 
-    var placementMap = {}
-    realRecordsSorted.forEach((r, idx) => { placementMap[r.twitch_name] = idx + 1 })
+    var placementMap = getPlacementMap(realRecordsSorted)
 
     //Get each player's card and sauce them on the screen
     playerRecords.forEach((record, i) => {
@@ -493,4 +490,47 @@ function orderDisplayComparator(a, b) {
 
     //Neither finished. rank by progress, most collected first
     return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
+}
+
+function getPlacementMap(origPlayerRecords) {
+    var placementMap = {}
+
+    //Copy player records to not mutate the original
+    var playerRecords = [...origPlayerRecords]
+
+    playerRecords.sort(orderRankComparator)
+    playerRecords.forEach((r, idx) => { 
+        //0th index is place 1
+        if (idx == 0) {
+            placementMap[r.twitch_name] = idx + 1
+            return
+        }
+
+        //Check the previous index to compare
+        var prevPlayer = playerRecords[idx - 1]
+
+        var prevFinished = prevPlayer.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+        var rFinished = r.num_collected >= category.getTotalCollectibles(currentRaceCategory)
+    
+        //If players are both finished, tie them if the finish times are the same, otherwise go by index
+        if (prevFinished && rFinished) {
+            if (prevPlayer.time === r.time) {
+                placementMap[r.twitch_name] = placementMap[prevPlayer.twitch_name]
+            } else {
+                placementMap[r.twitch_name] = idx + 1
+            }
+            return
+        }
+
+        //Otherwise, go by num collected
+        if (prevPlayer.num_collected == r.num_collected) {
+            placementMap[r.twitch_name] = placementMap[prevPlayer.twitch_name]
+            return
+        }
+
+        //Otherwise, go based on index
+        placementMap[r.twitch_name] = idx + 1
+    })
+
+    return placementMap
 }
