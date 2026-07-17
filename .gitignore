@@ -2,3 +2,9 @@ settings.json
 auth.json
 bash.exe.stackdump
 profanity_whitelist.csv
+cache
+cache/*
+results.json
+blacklist.txt
+organizers.txt
+log.txt

@@ -13,6 +13,9 @@ var port = ":8081"
 var logC = make(chan(string)) //Channel for logging events
 
 func InitControlPanel() {
+	//Register commands
+	initCommands()
+
 	mux := http.NewServeMux()
 	mux.Handle("/", http.FileServer(http.Dir("./ui/static")))
 	mux.HandleFunc("GET /api/upcoming_races", sendUpcomingRaces)
@@ -25,6 +28,7 @@ func InitControlPanel() {
 	mux.HandleFunc("POST /api/reset_race", resetRace)
 	mux.HandleFunc("POST /api/connect_to_twitch", connectToTwitchChat)
 	mux.HandleFunc("POST /api/disconnect_from_twitch", disconnectFromTwitchChat)
+	mux.HandleFunc("POST /api/submit_command", parseCommand)
 
 	//SSE
 	mux.HandleFunc("GET /api/events", initSSE(logC))

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -153,6 +154,92 @@ func GetPlayersForRace(raceID int) ([]RecordInfo, error) {
 	}
 	
 	return recordsArr, nil
+}
+
+//Gets runs for a specific player for a specific race
+func GetRunsForPlayers(raceID int, players []string) ([]RunInfo, error) {
+	base := fmt.Sprintf("%s%s/records/runs", ip, port)
+	endpoint, err := url.Parse(base)
+	if err != nil {
+		return nil, err
+	}
+	params := endpoint.Query()
+	
+	//Add players
+	for _, p := range players {
+		params.Add("player_name", p)
+	}
+	params.Set("race_id", strconv.Itoa(raceID))
+	endpoint.RawQuery = params.Encode()
+
+	//Send request
+	req, err := http.NewRequest("GET", endpoint.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	client := &http.Client{}
+
+	//Send request
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+
+	//Parse initial response into JSON and add the twitch names to the record array
+	runsArr := make([]RunInfo, 0)
+	runResponse := RunRes{}
+	json.NewDecoder(resp.Body).Decode(&runResponse)
+
+	if !runResponse.Success {
+		return nil, errors.New(runResponse.Error)
+	}
+
+	//If there's no errors, add the races to the output array
+	for _, record := range runResponse.Runs {
+		runsArr = append(runsArr, record)
+	}
+
+	//Check for more pages
+	nextPage := runResponse.Meta.NextPage
+	for nextPage != "" {
+		//Repeat the process
+		//Get records from mm api
+		endpoint := fmt.Sprintf("%s%s%s", ip, port, nextPage)
+		req, err := http.NewRequest("GET", endpoint , nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
+		client := &http.Client{}
+
+		//Send request
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		defer resp.Body.Close()
+
+		//Parse response into JSON and add the RecordInfo to the records array
+		runResponse := RunRes{}
+		json.NewDecoder(resp.Body).Decode(&runResponse)
+
+		if !runResponse.Success {
+			return nil, errors.New(runResponse.Error)
+		}
+
+		//If there's no errors, add the races to the output array
+		for _, record := range runResponse.Runs {
+			runsArr = append(runsArr, record)
+		}
+
+		nextPage = runResponse.Meta.NextPage
+	}
+	
+	return runsArr, nil
 }
 
 //Helper for getting races based on status

@@ -137,6 +137,14 @@ async function handleConnectToTwitchButton(event) {
     }
 }
 
+async function handleSubmitCommandButton(event) {
+    //Get command from submission box
+    command = commandInputBox.value
+    commandInputBox.value = ""
+    await submitCommand(command)
+    updateUI()
+}
+
 async function handleDisconnectFromTwitchButton(event) {
     await disconnectFromTwitch()
     updateUI()
@@ -151,3 +159,9 @@ endRaceButton.addEventListener('click', handleFinishRaceButton)
 resetRaceButton.addEventListener('click', handleResetRaceButton)
 connectToTwitchButton.addEventListener('click', handleConnectToTwitchButton)
 disconnectFromTwitchButton.addEventListener('click', handleDisconnectFromTwitchButton)
+submitCommandButton.addEventListener('click', handleSubmitCommandButton)
+commandInputBox.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        handleSubmitCommandButton(event)
+    }
+})

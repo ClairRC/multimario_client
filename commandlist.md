@@ -1,4 +1,4 @@
-# Command List
+# Twitch Command List
 ## Everyone
 ### !mmhelp
 - Sends the link to the command list
@@ -85,3 +85,23 @@
 
 ### !addorganizer [twitch_name]
 - Adds a user as an organizer, allowing them to use the commands in this section.
+
+# Host Command List
+## Used by the race host in the control panel
+### /exporttimes
+- Exports the individual times and final time for each player in the selected race.
+- Can't be used on a race that's in progress
+
+### /organizers
+- Shows the list of organizers
+
+### /blacklish
+- Shows the blacklist
+
+### /removeorganizer [twitch_name]
+- Removes the specified user as organizer
+
+### /showlog [num_logs]
+- Shows the most recent [num_logs] logs
+- [num_logs] is optional, defaults to 100
+- Most recent logs are shown lower in the terminal

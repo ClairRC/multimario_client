@@ -89,10 +89,7 @@ onInit((data) => {
     }
 
     //Reset timer and set current timer value
-    timer.stopTimer()
-    if (data.timer_running) {
-        timer.startTimer(data.timer_value)
-    }
+    timer.timerUpdate(data)
 
     document.fonts.ready.then(() => {
         fixAllTextSizing()

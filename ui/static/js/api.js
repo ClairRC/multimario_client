@@ -160,3 +160,14 @@ async function selectRace(raceID) {
         return
     }
 }
+
+async function submitCommand(command) {
+    const url = `/api/submit_command?command=${encodeURIComponent(command)}`
+    const response = await fetch(url, {method: 'POST'})
+
+    const result = await response.json()
+    if (!result.success) {
+        logError(`Unable to submit command: ${result.error}`)
+        return
+    }
+}

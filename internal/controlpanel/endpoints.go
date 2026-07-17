@@ -175,6 +175,38 @@ func disconnectFromTwitchChat(w http.ResponseWriter, r *http.Request) {
 
 /*
 * POST
+* Takes url-encoded command string in URL
+* Command string is keyed as "command"
+*/
+func parseCommand(w http.ResponseWriter, r*http.Request) {
+	//Gets value from URL
+	urlCommandStr := r.URL.Query()["command"]
+	if len(urlCommandStr) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": "empty command"})
+		return
+	}
+
+	//Only accept 1 command at a time
+	command := urlCommandStr[0]
+
+	//Export command
+	err := handleCommand(command, logC)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any {"success": true})
+}
+
+/*
+* POST
 * Takes race_id to start in URL
 */
 func startRace(w http.ResponseWriter, r *http.Request) {

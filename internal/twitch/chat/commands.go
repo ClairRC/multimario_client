@@ -1,9 +1,12 @@
 package chat
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	categoryinfo "github.com/multimario_client/internal/category_info"
 	"github.com/multimario_client/internal/store"
@@ -16,9 +19,13 @@ import (
 var chatCommands = make(map[string]func([]string, string) string)
 var commandListURL = "https://github.com/ClairRC/multimario_client/blob/main/commandlist.md"
 
+var logPath = "./log.txt"
+var maxLogSize = 10
+var logMu sync.RWMutex
+
 //Removes user from blacklist
 func commandUnblacklistUser(args []string, sender string) string {
-	if len(args) != 1 || !store.IsOrganizer(sender) {
+	if len(args) != 1 || !store.IsOrganizer(sender) || store.IsOrganizer(args[0]){
 		return ""
 	}
 
@@ -29,7 +36,7 @@ func commandUnblacklistUser(args []string, sender string) string {
 
 //Adds user to blacklist
 func commandBlacklistUser(args []string, sender string) string {
-	if len(args) != 1 || !store.IsOrganizer(sender) {
+	if len(args) != 1 || !store.IsOrganizer(sender) || store.IsOrganizer(args[0]) {
 		return ""
 	}
 
@@ -49,7 +56,7 @@ func commandMMHelp(args []string, sender string) string {
 
 //Adds user as organizer
 func commandAddOrganizer(args []string, sender string) string {
-	if len(args) != 1 || !store.IsOrganizer(sender) {
+	if len(args) != 1 || !store.IsOrganizer(sender) || store.IsOnBlacklist(args[0]){
 		return ""
 	}
 
@@ -104,7 +111,7 @@ func commandRevive(args []string, sender string) string {
 	targetPlayer := args[0]
 
 	//Update status to Forfeit
-	err := store.Race.SetToRunning(targetPlayer)
+	err := store.Race.SetPlayerStatus(targetPlayer, "running")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -221,7 +228,7 @@ func commandUnquit(args []string, sender string) string {
 	}
 
 	//Update the player's status
-	err := store.Race.SetToRunning(sender)
+	err := store.Race.SetPlayerStatus(sender, "running")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -237,7 +244,7 @@ func commandQuit(args []string, sender string) string {
 	}
 
 	//Update the player's status
-	err := store.Race.SetToQuit(sender)
+	err := store.Race.SetPlayerStatus(sender, "Quit")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -455,6 +462,9 @@ func isCommand(line string) bool {
 
 //Wrapper for executing commands
 func executeCommand(command string, sender string) string {
+	//Log this command
+	go logCommand(fmt.Sprintf("%s: %s", sender, command), logPath)
+
 	//If user is on blacklist, do nothing
 	if store.IsOnBlacklist(sender) {
 		return ""
@@ -468,6 +478,88 @@ func executeCommand(command string, sender string) string {
 	}
 
 	return chatCommands[comm](args[1:], strings.ToLower(sender))
+}
+
+//Logs command
+func logCommand(command string, filePath string) {
+	logMu.Lock()
+	defer logMu.Unlock()
+
+	//Open file
+	logFile, err := os.Open(filePath)
+	fileExists := true
+	if err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Printf("Error opening log file: %s", err.Error())
+			return
+		} else {
+			fileExists = false
+		}
+	}
+
+	//Read file and get final index
+	lines := make([]string, 0)
+	if fileExists {
+		scanner := bufio.NewScanner(logFile)
+		for scanner.Scan() {
+			lines = append(lines, scanner.Text())
+		}
+
+		//Determine if we need to cut off the oldest command
+		if len(lines) >= maxLogSize {
+			lines = lines[(len(lines)-maxLogSize+1):] //Cut off the extra logs
+		}
+
+		//Open file for writing and then write back to the file
+		logFile.Close()
+
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Error reading from log file: %s", err.Error())
+			return
+		}
+	}
+
+	//Append the newest log value
+	lines = append(lines, command)
+
+	//Write back to log file
+	logFile, err = os.OpenFile(filePath, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
+	if err != nil {
+		fmt.Printf("Error opening log file: %s", err.Error())
+		return
+	}
+	defer logFile.Close()
+
+	for _, l := range lines {
+		b := []byte(fmt.Sprintf("%s\n", l))
+		logFile.Write(b)
+	}
+}
+
+//Returns the contents of the log file as a string slice
+func GetLog() ([]string, error) {
+	logMu.RLock()
+	defer logMu.RUnlock()
+
+	//Attempt to open file
+	logFile, err := os.Open(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening log file: %v", err)
+	}
+	defer logFile.Close()
+
+	//Read values
+	scanner := bufio.NewScanner(logFile)
+	out := make([]string, 0)
+	for scanner.Scan() {
+		out = append(out, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("Error reading from log file: %v", err)
+	}
+
+	return out, nil
 }
 
 //Populates commands map with chat commands
