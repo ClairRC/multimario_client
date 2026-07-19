@@ -6,12 +6,32 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/multimario_client/internal/obs"
 	"github.com/multimario_client/internal/store"
 	"github.com/multimario_client/internal/twitch/chat"
 )
 
 //This file handles and stores control panel commands
 var hostCommands = make(map[string]func(int, []string) (string, error))
+
+func showSchedule(raceID int, args []string) (string, error) {
+	return Schedule.getRaceStr(), nil
+}
+
+func testOBSConnection(raceID int, args []string) (string, error) {
+	if len(args) != 0 {
+		return "", errors.New("This command takes no arguments.")
+	}
+
+	//Attempt connection
+	err := obs.ConnectToOBS()
+	defer obs.DisconnectFromOBS()
+	if err != nil {
+		return "", err
+	}
+
+	return "OBS connection successful. Disconnecting...", nil
+}
 
 func removeScheduledRaceLimit(raceID int, args []string) (string, error) {
 	if len(args) != 0 {
@@ -226,8 +246,10 @@ func initCommands() {
 	hostCommands["/showlog"] = showLog
 	hostCommands["/schedulerace"] = setRaceSchedule
 	hostCommands["/unschedulerace"] = resetRaceSchedule
+	hostCommands["/showschedule"] = showSchedule
 	hostCommands["/updatescheduledstart"] = updateScheduledRaceStart
 	hostCommands["/updatescheduledlimit"] = updateScheduledRaceLimit
 	hostCommands["/removescheduledlimit"] = removeScheduledRaceLimit
 	hostCommands["/beginrace"] = beginSelectedRace
+	hostCommands["/testobs"] = testOBSConnection
 }

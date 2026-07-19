@@ -7,6 +7,7 @@ import (
 
 	"github.com/multimario_client/internal/controlpanel"
 	"github.com/multimario_client/internal/mmapi"
+	"github.com/multimario_client/internal/obs"
 	"github.com/multimario_client/internal/stats"
 	"github.com/multimario_client/internal/store"
 	"github.com/multimario_client/internal/twitch"
@@ -20,7 +21,10 @@ type Settings struct {
 	TwitchClientID string `json:"twitch_client_id"`
 	TwitchClientSecret string `json:"twitch_client_secret"`
 	MMAPIKey string `json:"multimario_api_key"`
+	OBSPassword string `json:"obs_ws_password"`
 	Layout string `json:"layout"`
+	IP string `json:"multimario_ip"`
+	Port string `json:"multimario_port"`
 }
 
 func main() {
@@ -29,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("unable to load twitch api information from %s: %s", settingsPath, err.Error())
 	}
-	mmapi.SetMultiMarioAPIParams("http://localhost", ":3000", settings.MMAPIKey)
+	mmapi.SetMultiMarioAPIParams(settings.IP, settings.Port, settings.MMAPIKey)
 
 	//Get twitch user token
 	token, err := auth.GetUserToken(settings.TwitchClientID, settings.TwitchClientSecret)
@@ -40,6 +44,13 @@ func main() {
 	//Set twitch parameters
 	twitch.SetTwitchParams(token, settings.TwitchClientID, settings.TwitchClientSecret)
 	chat.Client.SetTwitchConnectionParams(twitch.GetTwitchParams())
+
+	//Set OBS parameters 
+	if pass := settings.OBSPassword; pass != "" {
+		obs.InitOBSPassword(pass)
+	} else {
+		log.Printf("no obs websocket password set. not using obs for scheduled races.")
+	}
 
 	//Check if there's an in progress race and if so store that
 	race, err := mmapi.GetInProgressRace()

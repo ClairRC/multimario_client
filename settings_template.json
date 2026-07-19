@@ -2,5 +2,8 @@
     "twitch_client_id": "Twitch client ID",
     "twitch_client_secret": "Twitch client secret",
     "multimario_api_key": "API Key from backend",
+    "multimario_ip": "Multimario backend IP",
+    "multimario_port": "Multimario backend Port",
+    "obs_ws_password": "OBS Websocket password",
     "layout": "default"
 }

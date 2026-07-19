@@ -19,8 +19,8 @@ func initSSE(w http.ResponseWriter, r *http.Request) {
 	clientGone := r.Context().Done() //Channel for client disconnecting
 	rc := http.NewResponseController(w) //Response controller
 
-	writeC := make(chan(string), 5)
-	registerSSEConnection(writeC)
+	id, writeC := registerSSEConnection()
+	defer unregisterSSEConnection(id)
 
 	for {
 		select {

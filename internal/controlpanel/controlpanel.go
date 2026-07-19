@@ -3,6 +3,7 @@ package controlpanel
 import (
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 //Package for handling the web-based control panel that the end user can use
@@ -11,7 +12,10 @@ import (
 //run remotely, this can change
 var ip = "0.0.0.0"
 var port = ":8081"
-var logChannels = make([]chan(string), 0)
+
+var eventsMu sync.RWMutex
+var globalID uint64 = 0
+var eventChannels = make(map[uint64]chan(string), 0)
 
 func InitControlPanel() {
 	//Register commands
@@ -53,22 +57,62 @@ func sendUpdateMiddleware(handler func(w http.ResponseWriter, r *http.Request)) 
 	}
 }
 
-//Register log channel
-func registerSSEConnection(ch chan(string)) {
-	logChannels = append(logChannels, ch)
+//Register log channel. Returns unique ID for this SSE connection
+func registerSSEConnection() (uint64, chan(string)) {
+	eventsMu.Lock()
+	//Get channel and new ID
+	newEventChannel := make(chan(string), 16)
+	newID := globalID
+	globalID++
 
-	updateControlPanel() //Update the UI
+	//Add to map
+	eventChannels[newID] = newEventChannel
+	eventsMu.Unlock()
+
+	go updateControlPanel() //Update the UI for new connection
+	return newID, newEventChannel
+}
+
+func unregisterSSEConnection(id uint64) {
+	eventsMu.Lock()
+	//Remove this channel from the map
+	delete(eventChannels, id)
+	eventsMu.Unlock()
 }
 
 //Sends message to control panel via SSE endpoint
 func logMessage(message string) {
-	for _, logC := range logChannels {
-		logC <- fmt.Sprintf("event: log\ndata: %s", message)
+	eventsMu.RLock()
+	channels := make([]chan(string), 0)
+	for _, v := range eventChannels {
+		if v != nil {
+			channels = append(channels, v)
+		}
+	}
+	eventsMu.RUnlock()
+
+	for _, logC := range channels {
+		select {
+		case logC <- fmt.Sprintf("event: log\ndata: %s", message):
+		default:
+		}
 	}
 } 
 
 func updateControlPanel() {
-	for _, logC := range logChannels {
-		logC <- "event: update\ndata:!"
+	eventsMu.RLock()
+	channels := make([]chan(string), 0)
+	for _, v := range eventChannels {
+		if v != nil {
+			channels = append(channels, v)
+		}
+	}
+	eventsMu.RUnlock()
+
+	for _, logC := range channels {
+		select {
+		case logC <- "event: update\ndata:!":
+		default:
+		}
 	}
 }

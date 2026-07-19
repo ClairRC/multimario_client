@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/multimario_client/internal/obs"
 	"github.com/multimario_client/internal/store"
 	"github.com/multimario_client/internal/twitch/chat"
 )
@@ -79,6 +81,7 @@ func (s *raceSchedule) ScheduleRace(raceID int, startTime string, timeLimit stri
 	go s.waitForRaceStart(ctx)
 	s.mu.Unlock()
 
+	//Store schedule
 	err = s.storeSchedule(scheduleCachePath)
 	if err != nil {
 		logMessage(fmt.Sprintf("Error storing scheduled race: %s Schedule was not saved.", err.Error()))
@@ -92,7 +95,6 @@ func (s *raceSchedule) ScheduleRace(raceID int, startTime string, timeLimit stri
 //Unschedules race and deletes the current race
 func (s *raceSchedule) UnscheduleRace() error {
 	s.mu.Lock() 
-	removedRaceID := s.raceID 
 	if s.cancel == nil {
 		s.mu.Unlock()
 		return errors.New("cannot unschedule race: no race scheduled")
@@ -107,7 +109,7 @@ func (s *raceSchedule) UnscheduleRace() error {
 	s.updateStartStreamTimeCh = nil
 	s.mu.Unlock()
 
-	go s.deleteSchedule(removedRaceID, scheduleCachePath)
+	go s.deleteSchedule(scheduleCachePath)
 
 	return nil
 }
@@ -409,6 +411,23 @@ func (s *raceSchedule) connectToTwitchForScheduledRace(ctx context.Context) erro
 		return err
 	}
 
+	//Connect to OBS and begin stream
+	if obs.IsUsingOBS() {
+		err = obs.ConnectToOBS()
+		if err != nil {
+			log.Printf("unable to connect to obs: %s. scheduled race will still begin.", err.Error())
+		}
+		err = obs.StartStreaming()
+		if err != nil {
+			log.Printf("unable to start stream: %s. scheduled race will still begin.", err.Error())
+		}
+		} else {
+		log.Print("obs not connected: race will begin without streaming")
+	}
+
+	//Update control panel
+	updateControlPanel()
+
 	return nil
 }
 
@@ -433,7 +452,8 @@ func (s *raceSchedule) beginScheduledRace(ctx context.Context) error {
 		return err
 	}
 
-	go s.deleteSchedule(raceID, scheduleCachePath) //Delete file since race is starting
+	//Update cxontrol pannel with new events
+	updateControlPanel()
 
 	return nil
 }
@@ -445,8 +465,14 @@ func (s *raceSchedule) endStreamForScheduledRace(ctx context.Context) error {
 	default:
 	}
 
-	//Disconnect from Twitch
+	//Disconnect from OBS. Do this regardless of if user is using OBS because there's no reason not to.
+	obs.DisconnectFromOBS()
+
+	//Disconnect from Twitch	
 	disconnectFromTwitchChat()
+
+	//Update cxontrol pannel with new events
+	updateControlPanel()
 
 	return nil
 }
@@ -471,6 +497,11 @@ func (s *raceSchedule) endScheduledRace(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	go s.deleteSchedule(scheduleCachePath)
+
+	//Update cxontrol pannel with new events
+	updateControlPanel()
 
 	return nil
 }
@@ -601,17 +632,11 @@ func (s *raceSchedule) loadSchedule(cachePath string) error {
 	return s.ScheduleRace(int(raceID), actualStart, formatDuration(time.Duration(int64(timeLimit))))
 }
 
-func (s *raceSchedule) deleteSchedule(raceID int, cachePath string) {
+func (s *raceSchedule) deleteSchedule(cachePath string) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
-	s.mu.RLock()
-	currentID := s.raceID
-	s.mu.RUnlock()
 
-	//Only delete this race is it hasn't been changed
-	if currentID == raceID {
-		os.Remove(cachePath)
-	}
+	os.Remove(cachePath)
 }
 
 //Helper for turning time duration into string
@@ -627,6 +652,11 @@ func formatDuration(d time.Duration) string {
 }
 
 func (s *raceSchedule) logRace() {
+
+	logMessage(s.getRaceStr())
+}
+
+func (s *raceSchedule) getRaceStr() string {
 	s.mu.RLock()
 	ctx := s.ctx
 	raceID := s.raceID
@@ -635,8 +665,7 @@ func (s *raceSchedule) logRace() {
 	s.mu.RUnlock()
 
 	if ctx == nil {
-		logMessage("No race is scheduled")
-		return
+		return "No race is scheduled"
 	}
 
 	logMsg := fmt.Sprintf("Race %v is scheduled at %s UTC on %s", raceID, start.Format(time.TimeOnly), start.Format(time.DateOnly))
@@ -644,5 +673,5 @@ func (s *raceSchedule) logRace() {
 		logMsg += fmt.Sprintf(" with a time limit of %s", limit.String())
 	}
 
-	logMessage(logMsg)
+	return logMsg
 }

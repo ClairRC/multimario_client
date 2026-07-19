@@ -73,7 +73,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	}
 
 	//Create write channel for this connection
-	writeChannel := make(chan(string), 200)
+	writeChannel := make(chan(string), 1000)
 
 	//A new connection was started, close this one
 	c.mu.Lock()
@@ -147,7 +147,7 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, wri
 		line := scanner.Text()
 
 		//Parse Twitch line in a new goroutine
-		go c.ParseLine(line, writeChannel)
+		go c.ParseLine(line, conn, writeChannel)
 	}
 }
 
@@ -214,13 +214,10 @@ func (c *TwitchChatClient) DisconnectFromUser(twitchRoom string) error {
 }
 
 //Takes a line of text and parses it
-func (c *TwitchChatClient) ParseLine(line string, writeChannel chan(string)) {
+func (c *TwitchChatClient) ParseLine(line string, conn *tls.Conn, writeChannel chan(string)) {
 	//If this is a PING, PONG back
 	if strings.HasPrefix(line, "PING") {
-		select {
-		case writeChannel <- fmt.Sprintf("PONG %s\r\n", strings.TrimPrefix(line, "PING ")):
-		default:
-		}
+		c.writePONG(conn, line)
 		return
 	} 
 
@@ -256,15 +253,40 @@ func (c *TwitchChatClient) writeToTwitchChat(message string, channelName string,
 	}
 }
 
+func (c* TwitchChatClient) writePONG(conn *tls.Conn, line  string) {
+	c.mu.Lock()
+	fmt.Fprintf(conn, "PONG %s\r\n", strings.TrimPrefix(line, "PING "))
+	c.mu.Unlock()
+}
+
 //Writes a message to the IRC connection
 func (c* TwitchChatClient) writeToConnection(ctx context.Context, conn *tls.Conn, writeChannel chan(string)) {
-	//TODO: Implement a cooldown to avoid rate limiting
+	limit := 19
+	timeout := 30 * time.Second
+	s := make(chan(struct{}), limit)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return //Connection is no longer current, return
 		case out := <-writeChannel:
+			//If this is a chat message, block if the semaphore is at its limit
+			if strings.HasPrefix(out, "PRIVMSG") {
+				select {
+				case s <- struct{}{}:
+				case <-ctx.Done():
+					return
+				}
+
+				//Set timeout to drain the channel
+				go func() {
+					<-time.After(timeout)
+					<-s
+				}()
+			}
+			c.mu.Lock()
 			fmt.Fprintf(conn, "%s\r\n", out)
+			c.mu.Unlock()
 		}
 	}
 }
