@@ -37,7 +37,7 @@ func (c *TwitchChatClient) IsConnectedToTwitch() bool {
 }
 
 //Connects to Twitch IRC and joins channel rooms. Returns TLS connection to Twitch IRC channel
-func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(string)) {
+func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string)) {
 	/*
 	* TODO: It is probably beneficial to at some point migrate to twitch's EventSub API for chat interfacing rather than IRC
 	* It might be worth it to wrap this function in some other function so that the architecture doesn't entirely
@@ -59,7 +59,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 
 	conn, err := tls.Dial("tcp", "irc.chat.twitch.tv:6697", &tls.Config{})
 	if err != nil {
-		logChannel <- err.Error()
+		log(err.Error())
 		c.mu.Lock()
 		if c.conn == conn {
 			cancel()
@@ -92,7 +92,7 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	//Get Twitch name from user token
 	userName, err := twitch.GetUserNameFromToken(c.credentials.UserToken(), c.credentials.ClientID())
 	if err != nil {
-		logChannel <- err.Error()
+		log(err.Error())
 		return
 	}
 
@@ -110,13 +110,13 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 			selfAdded = true
 		}
 
-		logChannel <- fmt.Sprintf("Attempting to connect to %s", name)
+		log(fmt.Sprintf("Attempting to connect to %s", name))
 		fmt.Fprintf(conn, "JOIN #%s\r\n", name)
 		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 	}
 
 	if !selfAdded {
-		logChannel <- fmt.Sprintf("Attempting to connect to %s", userName)
+		log(fmt.Sprintf("Attempting to connect to %s", userName))
 		fmt.Fprintf(conn, "JOIN #%s\r\n", userName)
 		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 	}
@@ -125,12 +125,12 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, logChannel chan(s
 	initCommands()
 
 	//After connecting, listen on this connection and return from this goroutine
-	go c.ListenToChat(ctx, conn, writeChannel, logChannel)
+	go c.ListenToChat(ctx, conn, writeChannel, log)
 }
 
 //Listens to Twitch chat and creates a channel for writing
-func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, writeChannel chan(string), logChannel chan(string)) {
-	logChannel <- "Listening to Twitch chat..."
+func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, writeChannel chan(string), log func(string)) {
+	log("Listening to Twitch chat...")
 
 	go c.writeToConnection(ctx, conn, writeChannel)
 
@@ -152,8 +152,8 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, wri
 }
 
 //Disconnects from twitch chat
-func (c *TwitchChatClient) DisconnectFromChat(logChannel chan(string)) error {
-	logChannel <- "Disconnecting from Twitch Chat..."
+func (c *TwitchChatClient) DisconnectFromChat(log func(string)) error {
+	log("Disconnecting from Twitch Chat...")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

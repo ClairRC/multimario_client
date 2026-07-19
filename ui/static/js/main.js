@@ -141,7 +141,12 @@ async function handleSubmitCommandButton(event) {
     //Get command from submission box
     command = commandInputBox.value
     commandInputBox.value = ""
-    await submitCommand(command)
+    var id
+    if (selectedRace === null) {
+        id = -1
+    } else { id = selectedRace.id }
+
+    await submitCommand(id, command)
     updateUI()
 }
 

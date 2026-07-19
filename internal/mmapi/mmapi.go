@@ -202,7 +202,6 @@ func GetRunsForPlayers(raceID int, players []string) ([]RunInfo, error) {
 		runsArr = append(runsArr, record)
 	}
 
-	//Check for more pages
 	nextPage := runResponse.Meta.NextPage
 	for nextPage != "" {
 		//Repeat the process
@@ -213,7 +212,6 @@ func GetRunsForPlayers(raceID int, players []string) ([]RunInfo, error) {
 			return nil, err
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
-		client := &http.Client{}
 
 		//Send request
 		resp, err := client.Do(req)
@@ -221,13 +219,13 @@ func GetRunsForPlayers(raceID int, players []string) ([]RunInfo, error) {
 			return nil, err
 		}
 
-		defer resp.Body.Close()
 
 		//Parse response into JSON and add the RecordInfo to the records array
 		runResponse := RunRes{}
 		json.NewDecoder(resp.Body).Decode(&runResponse)
 
 		if !runResponse.Success {
+			resp.Body.Close()
 			return nil, errors.New(runResponse.Error)
 		}
 
@@ -237,6 +235,7 @@ func GetRunsForPlayers(raceID int, players []string) ([]RunInfo, error) {
 		}
 
 		nextPage = runResponse.Meta.NextPage
+		resp.Body.Close()
 	}
 	
 	return runsArr, nil

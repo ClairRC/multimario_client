@@ -161,8 +161,8 @@ async function selectRace(raceID) {
     }
 }
 
-async function submitCommand(command) {
-    const url = `/api/submit_command?command=${encodeURIComponent(command)}`
+async function submitCommand(raceID, command) {
+    const url = `/api/submit_command?race_id=${raceID}&command=${encodeURIComponent(command)}`
     const response = await fetch(url, {method: 'POST'})
 
     const result = await response.json()

@@ -27,7 +27,7 @@ import (
 * }
  */
 
-func sendUpcomingRaces(w http.ResponseWriter, r *http.Request) {
+func sendUpcomingRacesHandler(w http.ResponseWriter, r *http.Request) {
     //Get upcoming races
 	w.Header().Set("Content-Type", "application/json")
 
@@ -57,7 +57,7 @@ func sendUpcomingRaces(w http.ResponseWriter, r *http.Request) {
 * }
  */
 
-func sendCompletedRaces(w http.ResponseWriter, r *http.Request) {
+func sendCompletedRacesHandler(w http.ResponseWriter, r *http.Request) {
     //Get completed races
 	w.Header().Set("Content-Type", "application/json")
 
@@ -84,12 +84,23 @@ func sendCompletedRaces(w http.ResponseWriter, r *http.Request) {
 *	}
 * }
 */
-func sendInProgressRace(w http.ResponseWriter, r *http.Request) {
+func sendInProgressRaceHandler(w http.ResponseWriter, r *http.Request) {
 	//Get in progress race
 	w.Header().Set("Content-Type", "application/json")
 
-	//Get stored race
-	race := store.Race.GetStoredRaceInfo()
+	//Prioritize sending actual in progress race
+	race, err := mmapi.GetInProgressRace()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
+	//No in progress race, get stored race
+	if race == nil {
+		race = store.Race.GetStoredRaceInfo()
+	}
 
 	//Get output
 	out := make(map[string]any)
@@ -109,7 +120,7 @@ func sendInProgressRace(w http.ResponseWriter, r *http.Request) {
 *	connected: bool
 * }
 */
-func isConnectedToTwitch(w http.ResponseWriter, r *http.Request) {
+func isConnectedToTwitchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any {"connected": chat.Client.IsConnectedToTwitch()})
@@ -118,9 +129,9 @@ func isConnectedToTwitch(w http.ResponseWriter, r *http.Request) {
 /*
 * POST
 */
-func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
+func connectToTwitchChatHandler(w http.ResponseWriter, r *http.Request) {
 	//Get twitch channels from storage
-	twitchChannels, err := store.Race.GetRacerTwitchChannels()
+	err := connectToTwitchChat()
 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -129,8 +140,9 @@ func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//Connect to chat
-	chat.Client.ConnectToChat(twitchChannels, logC)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any {"success": true})
 }
 
 /*
@@ -139,7 +151,7 @@ func connectToTwitchChat(w http.ResponseWriter, r *http.Request) {
 */
 
 //Function that takes race information and then passes that along to the stats stream
-func selectRace(w http.ResponseWriter, r *http.Request) {
+func selectRaceHandler(w http.ResponseWriter, r *http.Request) {
 	//Gets value from URL
 	urlIDs := r.URL.Query()["race_id"]
 	if len(urlIDs) == 0 {
@@ -158,28 +170,24 @@ func selectRace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//Start race on stats stream
-	err = store.Race.LoadRace(raceID)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		errMsg := fmt.Sprintf("unable to begin tracking race: %s", err.Error())
-		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": errMsg})
-		return
-	}
+	selectRace(raceID)
 }
 
-func disconnectFromTwitchChat(w http.ResponseWriter, r *http.Request) {
-	chat.Client.DisconnectFromChat(logC)
+func disconnectFromTwitchChatHandler(w http.ResponseWriter, r *http.Request) {
+	disconnectFromTwitchChat()
+	
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any {"success": true})
 }
 
 /*
 * POST
-* Takes url-encoded command string in URL
+* Takes url-encoded command string in URL and race_id
 * Command string is keyed as "command"
 */
-func parseCommand(w http.ResponseWriter, r*http.Request) {
-	//Gets value from URL
+func parseCommandHandler(w http.ResponseWriter, r*http.Request) {
+	//Gets values from URL
 	urlCommandStr := r.URL.Query()["command"]
 	if len(urlCommandStr) == 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -188,11 +196,28 @@ func parseCommand(w http.ResponseWriter, r*http.Request) {
 		return
 	}
 
+	urlIDs := r.URL.Query()["race_id"]
+	if len(urlIDs) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": "missing race id"})
+		return
+	}
+
+	//This endpoint will only accept 1 race, so throw out the rest
+	raceID, err := strconv.Atoi(urlIDs[0])
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
 	//Only accept 1 command at a time
 	command := urlCommandStr[0]
 
 	//Export command
-	err := handleCommand(command, logC)
+	err = handleCommand(raceID, command)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -209,44 +234,52 @@ func parseCommand(w http.ResponseWriter, r*http.Request) {
 * POST
 * Takes race_id to start in URL
 */
-func startRace(w http.ResponseWriter, r *http.Request) {
-	//Set new status to in_progress and pass off to helper function
-	store.Race.StartTimer()
-	updateRaceStatus(w, r, "in_progress")
-}
-
-/*
-* POST
-* Takes race_id to start in URL
-*/
-func finishRace(w http.ResponseWriter, r *http.Request) {
-	//Set new status to completed
-	store.Race.StopTimer()
-	updateRaceStatus(w, r, "completed")
-}
-
-/*
-* POST
-* Takes race_id to start in URL
-*/
-func resetRace(w http.ResponseWriter, r *http.Request) {
-	//Set new status to upcoming
-	store.Race.StopTimer()
-	updateRaceStatus(w, r, "upcoming")
-}
-
-//Helper for updating race status since multiple endpoints will do this
-func updateRaceStatus(w http.ResponseWriter, r *http.Request, newStatus string) {
-	err := store.Race.UpdateRaceStatus(newStatus)
+func startRaceHandler(w http.ResponseWriter, r *http.Request) {
+	err := startRace()
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
 		return
 	}
 
-	//No errors
-	logMessage(fmt.Sprintf("Race %v status has been updated to \"%s\"", store.Race.GetCurrentRaceID(), newStatus))
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any {"success": true})
+}
+
+/*
+* POST
+* Takes race_id to start in URL
+*/
+func finishRaceHandler(w http.ResponseWriter, r *http.Request) {
+	err := finishRace()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any {"success": true})
+}
+
+/*
+* POST
+* Takes race_id to start in URL
+*/
+func resetRaceHandler(w http.ResponseWriter, r *http.Request) {
+	err := resetRace()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any {"success": false, "error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any {"success": true})
 }

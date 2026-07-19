@@ -11,9 +11,96 @@ import (
 )
 
 //This file handles and stores control panel commands
-var hostCommands = make(map[string]func([]string, chan(string)) (string, error))
+var hostCommands = make(map[string]func(int, []string) (string, error))
 
-func showLog(args []string, logCh chan(string)) (string, error) {
+func removeScheduledRaceLimit(raceID int, args []string) (string, error) {
+	if len(args) != 0 {
+		return "", errors.New("This command takes no arguments")
+	}
+
+	err := Schedule.UpdateRaceTimeLimit("")
+	if err != nil {
+		return "", err
+	}
+
+	return "Scheduled race will not end automatically", nil
+}
+
+func updateScheduledRaceLimit(raceID int, args []string) (string, error) {
+	if len(args) > 1 {
+		return "", errors.New("Too many arguments")
+	}
+
+	if len(args) < 1 {
+		return "", errors.New("Too few arguments")
+	}
+
+	err := Schedule.UpdateRaceTimeLimit(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	return "Scheduled race time limit has been updated.", nil
+}
+
+func updateScheduledRaceStart(raceID int, args []string) (string, error) {
+	if len(args) > 1 {
+		return "", errors.New("Too many arguments")
+	}
+
+	if len(args) < 1 {
+		return "", errors.New("Too few arguments")
+	}
+
+	err := Schedule.UpdateStartTime(args[0])
+	if err != nil {
+		return "", err
+	}
+
+	return "Start time has been updated", nil
+}
+
+func resetRaceSchedule(raceID int, args []string) (string, error) {
+	if len(args) > 0 {
+		return "", errors.New("Too many arguments")
+	}
+
+	err := Schedule.UnscheduleRace()
+	if err != nil {
+		return "", err
+	}
+
+	return "Race has been unscheduled", nil
+}
+
+func setRaceSchedule(raceID int, args []string) (string, error) {
+	if len(args) > 2 {
+		return "", errors.New("Too many arguments")
+	}
+	if len(args) < 1 {
+		return "", errors.New("Not enough arguments")
+	}
+
+	if raceID < 0 {
+		return "", errors.New("Unable to schedule race: Invalid race ID")
+	}
+
+	//Get values
+	startTime := args[0]
+	limit := ""
+	if len(args) == 2 {
+		limit = args[1]
+	}
+
+	err := Schedule.ScheduleRace(raceID, startTime, limit)
+	if err != nil {
+		return "", err
+	}
+
+	return "Race has been scheduled", nil
+}
+
+func showLog(raceID int, args []string) (string, error) {
 	if len(args) > 2 {
 		return "", errors.New("Too many arguments")
 	}
@@ -34,17 +121,17 @@ func showLog(args []string, logCh chan(string)) (string, error) {
 	}
 
 	//Output logs
-	logCh <- "Logs: "
+	logMessage("Logs: ")
 	startingIndex := max(len(logs) - numLogs, 0)
 
 	for i := startingIndex; i < len(logs); i++ {
-		logCh <- logs[i]
+		logMessage(logs[i])
 	}
 
 	return "", nil
 }
 
-func removeOrganizer(args []string, logCh chan(string)) (string, error) {
+func removeOrganizer(raceID int, args []string) (string, error) {
 	if len(args) > 1 {
 		return "", errors.New("Too many arguments")
 	}
@@ -58,7 +145,7 @@ func removeOrganizer(args []string, logCh chan(string)) (string, error) {
 	return fmt.Sprintf("%s has been removed from the organizer list.", args[0]), nil
 }
 
-func showBlacklist(args []string, logCh chan(string)) (string, error) {
+func showBlacklist(raceID int, args []string) (string, error) {
 	//Get blacklist map
 	blacklist := store.Race.GetBlacklist()
 
@@ -71,7 +158,7 @@ func showBlacklist(args []string, logCh chan(string)) (string, error) {
 	return output, nil
 }
 
-func showOrganizers(args []string, logCh chan(string)) (string, error) {
+func showOrganizers(raceID int, args []string) (string, error) {
 	//Get organizer map
 	organizers := store.Race.GetOrganizerList()
 
@@ -84,11 +171,8 @@ func showOrganizers(args []string, logCh chan(string)) (string, error) {
 	return output, nil
 }
 
-func exportTimes(args []string, logCh chan(string)) (string, error) {
-	select {
-	case logCh <- "Exporting times. This might take a while...":
-	default:
-	}
+func exportTimes(raceID int, args []string) (string, error) {
+	logMessage("Exporting times. This might take a while...")
 
 	err := store.Race.ExportTimes()
 	if err != nil {
@@ -99,7 +183,7 @@ func exportTimes(args []string, logCh chan(string)) (string, error) {
 }
 
 //Takes a command and a log channel and executes it
-func handleCommand(command string, logCh chan(string)) error {
+func handleCommand(raceID int, command string) error {
 	args := strings.Split(command, " ")
 	comm := args[0]
 
@@ -114,19 +198,24 @@ func handleCommand(command string, logCh chan(string)) error {
 		return errors.New("command does not exist")
 	}
 
-	response, err := hostCommands[comm](args, logCh)
+	response, err := hostCommands[comm](raceID, args)
 	if err != nil {
 		return err
 	}
 
 	if response != "" {
-		select {
-		case logCh <- response:
-		default:
-		}
+		logMessage(response)
 	}
 
+	//Command successful, update the UI
+	updateControlPanel()
+
 	return nil
+}
+
+func beginSelectedRace(raceID int, args []string) (string, error) {
+	startRace()
+	return "", nil
 }
 
 func initCommands() {
@@ -135,4 +224,10 @@ func initCommands() {
 	hostCommands["/blacklist"] = showBlacklist
 	hostCommands["/removeorganizer"] = removeOrganizer
 	hostCommands["/showlog"] = showLog
+	hostCommands["/schedulerace"] = setRaceSchedule
+	hostCommands["/unschedulerace"] = resetRaceSchedule
+	hostCommands["/updatescheduledstart"] = updateScheduledRaceStart
+	hostCommands["/updatescheduledlimit"] = updateScheduledRaceLimit
+	hostCommands["/removescheduledlimit"] = removeScheduledRaceLimit
+	hostCommands["/beginrace"] = beginSelectedRace
 }

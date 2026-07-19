@@ -2,18 +2,23 @@
 
 //Setup
 async function setupUI() {
-    //Setup SSE
-    const eventSource = new EventSource("/api/events")
-    eventSource.onmessage = (event) => {
-        logMessage(event.data)
-    }
-    eventSource.onerror = (e) => console.error("SSE error", e)
-
     init = async () => {
         selectedRace = await getInProgressRace()
     }
-    await init()
 
+    //Setup SSE
+    const eventSource = new EventSource("/api/events")
+    eventSource.addEventListener("log", (event) => {
+        logMessage(event.data)
+    })
+    eventSource.addEventListener("update", async (event) => {
+        //When we get an update, update ui
+        await init()
+        await updateUI()
+    })
+    eventSource.onerror = (e) => console.error("SSE error", e)
+
+    await init()
     await updateUI()
 }
 
