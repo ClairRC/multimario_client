@@ -30,6 +30,4 @@ func disableQuickEdit() {
         fmt.Printf("Error setting console mode: %v\n", err)
         return
     }
-
-	fmt.Println("Quick Edit mode has been disabled.")
 }

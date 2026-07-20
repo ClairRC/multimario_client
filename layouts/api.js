@@ -12,8 +12,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 setup()
 async function setup() {
     //Wait a few milliseconds to prevent rapid refreshing messing up the SSE connection
-    //I am CERTAIN there is a better solution but if there is i can't figure it out so sorry about the 100ms delay
-    await sleep(100)
+    //I am CERTAIN there is a better solution but if there is i can't figure it out so sorry about the 150ms delay
+    await sleep(150)
     await setupSSE()
 }
 
