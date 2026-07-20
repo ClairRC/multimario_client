@@ -2,8 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
+	"runtime"
+	"syscall"
+	"unsafe"
 
 	"github.com/multimario_client/internal/controlpanel"
 	"github.com/multimario_client/internal/mmapi"
@@ -13,6 +17,7 @@ import (
 	"github.com/multimario_client/internal/twitch"
 	"github.com/multimario_client/internal/twitch/auth"
 	"github.com/multimario_client/internal/twitch/chat"
+	"golang.org/x/sys/windows"
 )
 
 const settingsPath = "settings.json"
@@ -28,6 +33,11 @@ type Settings struct {
 }
 
 func main() {
+	//Disable Windows terminal's QuickEdit mode
+	if runtime.GOOS == "windows" {
+		disableQuickEdit()
+	}
+
 	//Load settings
 	settings, err := loadSettings(settingsPath)
 	if err != nil {
@@ -49,7 +59,7 @@ func main() {
 	if pass := settings.OBSPassword; pass != "" {
 		obs.InitOBSPassword(pass)
 	} else {
-		log.Printf("no obs websocket password set. not using obs for scheduled races.")
+		log.Printf("no obs websocket password set. not using obs for scheduled races.\n")
 	}
 
 	//Check if there's an in progress race and if so store that
@@ -83,4 +93,50 @@ func loadSettings(settingsPath string) (*Settings, error) {
 	}
 
 	return &settings, nil
+}
+
+func disableWindowsQuickEdit() error {
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+    getStdHandle := kernel32.NewProc("GetStdHandle")
+    getConsoleMode := kernel32.NewProc("GetConsoleMode")
+    setConsoleMode := kernel32.NewProc("SetConsoleMode")
+
+    const stdInputHandle = ^uintptr(10) + 1
+
+    handle, _, _ := getStdHandle.Call(uintptr(0xFFFFFFF6))
+
+    var mode uint32
+    _, _, err := getConsoleMode.Call(handle, uintptr(unsafe.Pointer(&mode)))
+
+    mode &^= 0x0040
+    mode |= 0x0080
+
+    ret, _, err := setConsoleMode.Call(handle, uintptr(mode))
+    if ret == 0 {
+        return err
+    }
+    return nil
+}
+
+func disableQuickEdit() {
+	fd := os.Stdin.Fd()
+	handle := windows.Handle(fd)
+
+	var mode uint32
+	err := windows.GetConsoleMode(handle, &mode)
+	if err != nil {
+		fmt.Printf("Error getting console mode: %v\n", err)
+		return
+	}
+
+	mode &^= windows.ENABLE_QUICK_EDIT_MODE
+	mode |= windows.ENABLE_EXTENDED_FLAGS
+
+	err = windows.SetConsoleMode(handle, mode)
+	if err != nil {
+		fmt.Printf("Error setting console mode: %v\n", err)
+		return
+	}
+
+	fmt.Println("Quick Edit mode has been disabled.")
 }

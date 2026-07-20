@@ -765,7 +765,7 @@ func saveOrganizerList(filePath string) {
 	defer organizerMu.Unlock()
 	organizerFile, err := os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Printf("Error updating organizer list:%s", err.Error()) //Couldn't write, it's no biggie
+		fmt.Printf("Error updating organizer list:%s\n", err.Error()) //Couldn't write, it's no biggie
 		return
 	}
 
@@ -774,7 +774,7 @@ func saveOrganizerList(filePath string) {
 		if b {
 			_, err = fmt.Fprintln(organizerFile, n)
 			if err != nil {
-				fmt.Printf("Error updating organizer list:%s", err.Error()) //Couldn't write, it's no biggie
+				fmt.Printf("Error updating organizer list:%s\n", err.Error()) //Couldn't write, it's no biggie
 				continue
 			}
 		}
@@ -787,7 +787,7 @@ func saveBlacklist(filePath string) {
 	defer blacklistMu.Unlock()
 	blacklistFile, err := os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Printf("Error updating blacklist: %s", err.Error()) //Couldn't write, it's no biggie
+		fmt.Printf("Error updating blacklist: %s\n", err.Error()) //Couldn't write, it's no biggie
 		return
 	}
 
@@ -796,7 +796,7 @@ func saveBlacklist(filePath string) {
 		if b {
 			_, err = fmt.Fprintln(blacklistFile, n)
 			if err != nil {
-				fmt.Printf("Error updating blacklist: %s", err.Error()) //Couldn't write, it's no biggie
+				fmt.Printf("Error updating blacklist: %s\n", err.Error()) //Couldn't write, it's no biggie
 				continue
 			}
 		}
@@ -1143,7 +1143,7 @@ func (s *store) loadBlacklist(filePath string) {
 	defer blacklistMu.Unlock()
 	blacklistFile, err := os.Open(filePath)
 	if err != nil {
-		fmt.Printf("Error loading blacklist: %s", err.Error())
+		fmt.Printf("Error loading blacklist: %s\n", err.Error())
 		return
 	}
 	defer blacklistFile.Close()
@@ -1154,7 +1154,7 @@ func (s *store) loadBlacklist(filePath string) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading blacklist: %s", err.Error())
+		fmt.Printf("Error reading blacklist: %s\n", err.Error())
 	}
 }
 
@@ -1164,7 +1164,7 @@ func (s *store) loadOrganizerList(filePath string) {
 	defer organizerMu.Unlock()
 	organizerListFile, err := os.Open(filePath)
 	if err != nil {
-		fmt.Printf("Error loading organizer list: %s", err.Error())
+		fmt.Printf("Error loading organizer list: %s\n", err.Error())
 		return
 	}
 	defer organizerListFile.Close()
@@ -1175,7 +1175,7 @@ func (s *store) loadOrganizerList(filePath string) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading organizer List: %s", err.Error())
+		fmt.Printf("Error reading organizer List: %s\n", err.Error())
 	}
 }
 

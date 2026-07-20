@@ -415,14 +415,14 @@ func (s *raceSchedule) connectToTwitchForScheduledRace(ctx context.Context) erro
 	if obs.IsUsingOBS() {
 		err = obs.ConnectToOBS()
 		if err != nil {
-			log.Printf("unable to connect to obs: %s. scheduled race will still begin.", err.Error())
+			log.Printf("unable to connect to obs: %s. scheduled race will still begin.\n", err.Error())
 		}
 		err = obs.StartStreaming()
 		if err != nil {
-			log.Printf("unable to start stream: %s. scheduled race will still begin.", err.Error())
+			log.Printf("unable to start stream: %s. scheduled race will still begin.\n", err.Error())
 		}
 		} else {
-		log.Print("obs not connected: race will begin without streaming")
+		log.Print("obs not connected: race will begin without streaming\n")
 	}
 
 	//Update control panel

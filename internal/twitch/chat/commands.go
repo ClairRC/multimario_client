@@ -490,7 +490,7 @@ func logCommand(command string, filePath string) {
 	fileExists := true
 	if err != nil {
 		if !os.IsNotExist(err) {
-			fmt.Printf("Error opening log file: %s", err.Error())
+			fmt.Printf("Error opening log file: %s\n", err.Error())
 			return
 		} else {
 			fileExists = false
@@ -514,7 +514,7 @@ func logCommand(command string, filePath string) {
 		logFile.Close()
 
 		if err := scanner.Err(); err != nil {
-			fmt.Printf("Error reading from log file: %s", err.Error())
+			fmt.Printf("Error reading from log file: %s\n", err.Error())
 			return
 		}
 	}
@@ -525,7 +525,7 @@ func logCommand(command string, filePath string) {
 	//Write back to log file
 	logFile, err = os.OpenFile(filePath, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0644)
 	if err != nil {
-		fmt.Printf("Error opening log file: %s", err.Error())
+		fmt.Printf("Error opening log file: %s\n", err.Error())
 		return
 	}
 	defer logFile.Close()
