@@ -31,5 +31,6 @@ func InitStatsPage(layoutName string) {
 	//SSE
 	mux.HandleFunc("GET /api/events", initSSE)
 	
+	fmt.Printf("Hosting stats page on http://localhost%s\n", port)
 	http.ListenAndServe(ip+port, mux)
 }

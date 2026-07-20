@@ -44,6 +44,7 @@ func InitControlPanel() {
 	//SSE
 	mux.HandleFunc("GET /api/events", initSSE)
 
+	fmt.Printf("Hosting control panel on http://localhost%s\n", port)
 	http.ListenAndServe(ip+port, mux)
 }
 
