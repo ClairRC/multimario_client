@@ -20,7 +20,7 @@ var chatCommands = make(map[string]func([]string, string) string)
 var commandListURL = "https://github.com/ClairRC/multimario_client/blob/main/commandlist.md"
 
 var logPath = "./log.txt"
-var maxLogSize = 10
+var maxLogSize = 1000
 var logMu sync.RWMutex
 
 //Removes user from blacklist
