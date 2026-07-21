@@ -9,7 +9,7 @@ This bot was also made to, hopefully, be more scalable than the previous bot, an
 \
 This bot is heavily inspired by the race bot created by 1upsforlife that the community has been using for over a decade now.
 
-(If you're a race/organizer looking for the command list, you can find it [here](https://github.com/ClairRC/multimario_client/blob/main/commandlist.md))
+(If you're a racer/organizer looking for the command list, you can find it [here](https://github.com/ClairRC/multimario_client/blob/main/commandlist.md))
 
 # Table of Contents
 * [API Documentation](#api-documentation)
