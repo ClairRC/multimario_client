@@ -100,6 +100,7 @@ There are some convenient commands for the host of the race. These can be found 
 - Sometimes, when you select a race, not all of the player cards will be loaded on the stats page. This seems entirely random and is likely due to some race condition. Reloading the page fixes this.
 - If you refresh the stats page and the race being hosted has a cached start time, the timer will update to reflect that start time even if it is paused. This isn't so much of a bug as a side effect of caching the start time,
 and it shouldn't be an issue since the timer shouldn't be paused during a race anyway, but it's odd behavior nonetheless.
+- The /testobs host command doesn't output any message if it fails. It instead panics and prints an error in the console. Though the bot doesn't crash. That will be fixed soon.
 
 ## TODO
 - Implement backend polling/websockets to display updated race progress from external API calls.
