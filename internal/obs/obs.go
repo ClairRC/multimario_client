@@ -24,6 +24,10 @@ func ConnectToOBS() error {
 	if err != nil {
 		return fmt.Errorf("Unable to connect to OBS: %v", err)
 	}
+	if client == nil {
+		return fmt.Errorf("Unable to connect to OBS. Make sure your websocket password is set correctly.")
+	}
+
 	obsClient = client
 
 	return nil
@@ -31,8 +35,6 @@ func ConnectToOBS() error {
 
 //Tears down connection with OBS
 func DisconnectFromOBS() {
-	defer obsClient.Disconnect()
-	
 	if obsClient != nil {
 		status, err := obsClient.Stream.GetStreamStatus() 
 		if err != nil {
@@ -42,7 +44,8 @@ func DisconnectFromOBS() {
 		if status.OutputActive {
 			obsClient.Stream.StopStream()
 		}
-
+		
+		obsClient.Disconnect()
 		obsClient = nil
 	}
 }
