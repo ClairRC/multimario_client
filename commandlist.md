@@ -70,6 +70,8 @@
 
 ### !settimer [hh:mm:ss]
 - Sets the on-stream timer to the value given
+- IMPORTANT: If the race is scheduled to end at a certain time, setting the timer past that time will automatically end the race.\
+Organizers should be very careful with this command and only use it to ensure the timer is accurate!!!
 
 ### !stoptimer
 - Pauses the on-stream timer
@@ -105,3 +107,38 @@
 - Shows the most recent [num_logs] logs
 - [num_logs] is optional, defaults to 100
 - Most recent logs are shown lower in the terminal
+
+### /schedulerace [race_start] [race_limit]
+- Schedules a race to automatically begin at [race_start] and automatically end after [race_limit]
+- [race_start] should be formatted using RFC3339 format. Examply: YYYY-MM-DDTHH:MM:SS. Time must be in UTC and this format must be followed exactly.
+- [race_limit] must be formatted as [hh:mm:ss]
+- [race_limit] is optional.
+- You can only have 1 race scheduled at a time.
+- If there is no OBS websocket password configured, the race will begin without streaming.
+- The stream will begin and bot will connect to chat 30 minutes before the race is scheduled to begin.
+- Scheduled races are remembered even if the bot is re-opened, but it should at least be opened when the race starts.
+- If the bot is opened when a scheduled race is in progress, it will still begin streaming/connect to chat/start the race until the race is scheduled to end.
+
+### /unschedulerace
+- Unschedules any scheduled events.
+- If this command is called during a race, the race/stream will not automatically end and the bot will not automatically disconnect from chat until the bot is closed.
+
+### /showschedule
+- Shows the scheduled race information.
+
+### /updatescheduledstart [new_start]
+- Updates the scheduled start time.
+- Uses same format as /schedulerace (YYYY-MM-DDTHH:MM:SS UTC time)
+
+### /updatescheduledlimit [new_limit]
+- Updates the race time limit. hh:mm:ss format
+- This command will only work up until the race begins, so make sure the time limit is correct before then.
+
+### /removescheduledlimit
+- Sets the scheduled race to no longer have a time limit.
+
+### /beginrace
+- Same functionality as pressing the "Begin Race" button.
+
+### /testobs
+- Tests to make sure that the bot is connected to OBS via websockets.
