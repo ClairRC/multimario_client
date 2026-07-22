@@ -1,0 +1,215 @@
+@font-face {
+  font-family: 'Lobster';
+  src: url('../resources/Lobster_1.4.otf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Delfino';
+  src: url('../resources/Delfino.otf');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+    background-image: url('../resources/bg.png');
+    background-repeat: no-repeat;
+    overflow: hidden;
+    background-size: cover;
+    aspect-ratio: 16/9;
+}
+
+.header-info {
+    display: flex;
+    height: 18%;
+    margin-bottom: 0.3%;
+}
+
+.top-3 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 100%;
+    width: 65%;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 18vw);
+    overflow: hidden;
+    justify-content: center;
+    column-gap: 1vw;
+    row-gap: 0.6vw;
+    margin-bottom: 0.5%;
+}
+
+.stats-grid-bottom {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 18vw);
+    overflow: hidden;
+    justify-content: center;
+    column-gap: 1vw;
+    row-gap: 0.6vw;
+    margin-bottom: 0.5%;
+    padding-top: 2%;
+}
+
+.stats-grid-bottom .player-box {
+    width: 17.8vw;
+    aspect-ratio: 13/6;
+}
+
+.stats-grid .player-box {
+    width: 17.8vw;
+    aspect-ratio: 13/6;
+}
+
+.top-3 .player-box {
+    width: 20vw;
+    margin: auto;
+    height: 90%;
+    aspect-ratio: 13/6;
+}
+
+.player-box {
+    --bg-image: none;
+    background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), rgba(10, 10, 10, 0.3)), 
+        var(--bg-image);
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.user-info {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    height: 40%;
+    margin: 2%;
+}
+
+.user-pfp {
+    height: 100%;
+    aspect-ratio: 1/1;
+}
+
+.user-name {
+    font-family: 'Delfino';
+    -webkit-text-stroke: 0.02cqi black;
+    width: 75%;
+    color: white;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 2%;
+}
+
+.user-position {
+    margin-left: auto;
+    padding-right: 1%;
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+    width: 25%;
+    color: whitesmoke;
+    --stroke-color: none;
+    -webkit-text-stroke: 0.03cqi var(--stroke-color);
+    font-size: 3cqi;
+    text-align: right;
+}
+
+.progress {
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    width: 100%;
+    height: 45%;
+}
+
+.game-progress {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    --stroke-color: none;
+    -webkit-text-stroke: 0.06cqi var(--stroke-color);
+}
+
+.icon {
+    height: 80%;
+    margin-left: 5%;
+    aspect-ratio: 1/1;
+}
+
+.numeric-progress {
+    width: 40%;
+    height: 80%;
+    margin-left: auto;
+    margin-right: 2%;
+}
+
+.fraction {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.numerator {
+    font-size: 1.8em;
+    -webkit-text-stroke: 0.04cqi black; 
+    transform: translateX(-40%);
+    transform: translateY(-20%);
+}
+
+.denominator {
+    -webkit-text-stroke: 0.03cqi black; 
+    font-size: 1.4em;
+    transform: translateX(66%);
+    transform: translateY(50%);
+}
+
+.timer-box {
+    display: flex;
+    justify-content: center;
+    width: 30%;
+    margin: auto;
+    height: 100%;
+    background: rgba(20, 20, 20, 0.95);
+    border-color: black;
+    border-width: 1vw;
+    border-radius: 1cqi;
+}
+
+.timer {
+    color: white;
+    margin: auto;
+    font-size: 4.8cqi;
+    font-family: 'Lobster';
+    letter-spacing: 0.1vw;
+}
+
+.grid-scroller {
+    height: 100%;
+    overflow-y: hidden;
+}
+
+.placeholder {
+    visibility: none;
+    pointer-events: none;
+    width: 18vw;
+    aspect-ratio: 13/6;
+}
+
+.quit-text {
+    color: rgb(255, 90, 90);
+    -webkit-text-stroke: 0.02cqi red;
+    max-width: 80%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-left: 2%;
+}
+
+.page {
+    background-color: black;
+}
