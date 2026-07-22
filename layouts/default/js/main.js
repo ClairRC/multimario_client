@@ -21,7 +21,7 @@ var updateText = {}
 
 //Durations (ms) for how long to STAY on each page before turning, indexed by page number.
 //Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
-const pageDurations = [10000, 10000, 10000] // 30s, 20s, 15s
+const pageDurations = [30000, 20000, 15000] // 30s, 20s, 15s
 const fallbackPageDuration = 10000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
