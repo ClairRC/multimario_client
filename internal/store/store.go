@@ -122,11 +122,13 @@ var blacklistMu sync.RWMutex
 var blacklist map[string]bool = make(map[string]bool)
 
 var exportedTimesMu sync.RWMutex
+var logStatesMu sync.RWMutex
 
 var cacheDir string = "./cache"
 var organizersPath = "./organizers.txt"
 var blacklistPath = "./blacklist.txt"
 var exportedTimesPath = "./results.json"
+var logStatesDir = "./race_data/"
 
 func (s *store) Subscribe(ctx context.Context, updateTypes ...UpdateType) (chan(State), chan(Update), context.CancelFunc) {
 	//Channels
@@ -891,11 +893,15 @@ func (s *store) ExportTimes() error {
 		CatName string `json:"category"`
 		Time string `json:"time"`
 	}
-	type timeData struct {
+	type racer struct {
+		Name string `json:"player"`
+		Collectibles int `json:"collectibles"`
 		FinalTime string `json:"final_time"`
 		Games []*gameTime `json:"games"`
 	}
-	data := make(map[string]*timeData)
+
+	data := make([]*racer, 0)
+	dataMap := make(map[string]*racer)
 
 	//Parse records
 	twitchNameMap := make(map[string]string)
@@ -903,10 +909,16 @@ func (s *store) ExportTimes() error {
 	for _, r := range records {
 		names = append(names, r.Player)
 		twitchNameMap[r.Player] = r.PlayerTwitch
-		data[r.PlayerTwitch] = &timeData{
+
+		newRacer := &racer{
+			Name: r.PlayerTwitch,
+			Collectibles: int(r.NumCollected),
 			FinalTime: r.FinalTime,
 			Games: nil,
 		}
+
+		data = append(data, newRacer)
+		dataMap[r.PlayerTwitch] = newRacer
 	}
 
 	//Get runs for these names
@@ -919,7 +931,7 @@ func (s *store) ExportTimes() error {
 	for _, r := range runs {
 		//Get this player's data
 		playerTwitch := twitchNameMap[r.Player]
-		playerInfo, exists := data[playerTwitch]
+		playerInfo, exists := dataMap[playerTwitch]
 		if !exists {
 			continue
 		}
@@ -1177,6 +1189,45 @@ func (s *store) loadOrganizerList(filePath string) {
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("Error reading organizer List: %s\n", err.Error())
 	}
+}
+
+//Helper function for logging useful racer state information
+func (s *store) LogPlayerState(playerName string, playerNum int) {
+	//Get information from store
+	s.mu.RLock()
+	currentStatus := s.info.Status
+	date := s.info.Date
+	s.mu.RUnlock()
+
+	//Only do this log if the race is in progress
+	if currentStatus != "in_progress" {
+		return	
+	}
+
+	layout := "2006-01-02T15:04:05"
+	currentTime := time.Now().Format(layout)
+	
+	logStatesMu.Lock()
+	defer logStatesMu.Unlock()
+
+	err := os.MkdirAll(logStatesDir, 0755)
+	if err != nil {
+		fmt.Printf("error creating state log directory: %v", err)
+		return
+	}
+
+	filePath := fmt.Sprintf("%s%s-state-username.log", logStatesDir, date)
+
+	//Open file for appending
+	stateFile, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Error opening log file: %s\n", err.Error())
+		return
+	}
+	defer stateFile.Close()
+
+	b := []byte(fmt.Sprintf("%s %s %v\n", currentTime, playerName, playerNum))
+	stateFile.Write(b)
 }
 
 //Gets start time in unix millis from timer string

@@ -19,9 +19,11 @@ import (
 var chatCommands = make(map[string]func([]string, string) string)
 var commandListURL = "https://github.com/ClairRC/multimario_client/blob/main/commandlist.md"
 
-var logPath = "./log.txt"
+var cmdLogPath = "./commands.log"
 var maxLogSize = 1000
 var logMu sync.RWMutex
+
+var stateMu sync.RWMutex
 
 //Removes user from blacklist
 func commandUnblacklistUser(args []string, sender string) string {
@@ -267,10 +269,13 @@ func commandBotSet(args []string, sender string) string {
 	}
 
 	//Store the update
-	_, err = store.Race.SetPlayerCount(numToSet, targetPlayer)
+	newNum, err := store.Race.SetPlayerCount(numToSet, targetPlayer)
 	if err != nil {
 		return fmt.Sprintf("Error adding: %s", err.Error())
 	}
+
+	//Log this update if there is a race in progress
+	go store.Race.LogPlayerState(targetPlayer, newNum)
 
 	//No output, again for legacy bot support
 	return ""
@@ -393,6 +398,9 @@ func commandSet(args []string, sender string) string {
 		return fmt.Sprintf("Error adding: %s", err.Error())
 	}
 
+	//Log this update if there is a race in progress
+	go store.Race.LogPlayerState(targetPlayer, newNum)
+
 	return fmt.Sprintf("%s now has %v %s in %s.", 
 		targetPlayer, categoryinfo.GetGameProgress(raceCat, newNum), 
 		categoryinfo.GetCollectibleType(raceCat, newNum), 
@@ -439,6 +447,9 @@ func commandAdd(args []string, sender string) string {
 		return fmt.Sprintf("Error adding: %s", err.Error())
 	}
 
+	//Log this update if there is a race in progress
+	go store.Race.LogPlayerState(targetPlayer, newNum)
+
 	return fmt.Sprintf("%s now has %v %s in %s.", 
 		targetPlayer, categoryinfo.GetGameProgress(raceCat, newNum), 
 		categoryinfo.GetCollectibleType(raceCat, newNum), 
@@ -463,7 +474,7 @@ func isCommand(line string) bool {
 //Wrapper for executing commands
 func executeCommand(command string, sender string) string {
 	//Log this command
-	go logCommand(fmt.Sprintf("%s: %s", sender, command), logPath)
+	go logCommand(fmt.Sprintf("%s: %s", sender, command), cmdLogPath)
 
 	//If user is on blacklist, do nothing
 	if store.IsOnBlacklist(sender) {
@@ -542,7 +553,7 @@ func GetLog() ([]string, error) {
 	defer logMu.RUnlock()
 
 	//Attempt to open file
-	logFile, err := os.Open(logPath)
+	logFile, err := os.Open(cmdLogPath)
 	if err != nil {
 		return nil, fmt.Errorf("Error opening log file: %v", err)
 	}

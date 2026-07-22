@@ -21,7 +21,7 @@ var updateText = {}
 
 //Durations (ms) for how long to STAY on each page before turning, indexed by page number.
 //Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
-const pageDurations = [10000, 10000, 10000] // 60s, 30s, 15s
+const pageDurations = [10000, 10000, 10000] // 30s, 20s, 15s
 const fallbackPageDuration = 10000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
@@ -42,7 +42,9 @@ onInit((data) => {
     updateText = {}
     pageNum = 0
 
+    var gridContainer = document.querySelector(".grid-scroller")
     var statsGrid = document.querySelector(".stats-grid")
+    var statsGridBottom = document.querySelector(".stats-grid-bottom")
     var top3 = document.querySelector(".top-3")
 
     //Clear out the player cards since this is init
@@ -60,11 +62,14 @@ onInit((data) => {
     playerRecords.forEach((record, i) => {
         var card = player.getPlayerCard(record.player_name, record.twitch_name, placementMap[record.twitch_name], record.pfp_url, record.num_collected, record.status, record.time, data.race_category)
         var isInTop3 = i <= 2
+        var isNormal = i < 28
         
         if (isInTop3) {
             top3.innerHTML += card
-        } else {
+        } else if (isNormal) {
             statsGrid.innerHTML += card
+        } else {
+            statsGridBottom.innerHTML += card
         }
 
         //Update player cache
@@ -73,7 +78,7 @@ onInit((data) => {
 
     //Add placeholder cards to the DOM just for page switching
     for(let i = 0; i < 25; i++) {
-        statsGrid.innerHTML += player.getPlaceHolderCard(`__placeholder${i}`)
+        statsGridBottom.innerHTML += player.getPlaceHolderCard(`__placeholder${i}`)
     }
 
     //For placeholders that are not on screen, set their display to none so they don't get in the way
@@ -237,6 +242,7 @@ function updateCardPlacements(animationLength) {
 function updatePlayerCards() {
     var statsGrid = document.querySelector(".stats-grid")
     var top3 = document.querySelector(".top-3")
+    var bottom5 = document.querySelector(".stats-grid-bottom")
 
     sortPlayers()
 
@@ -258,7 +264,14 @@ function updatePlayerCards() {
 
         var playerPlacementNum = i < 3 ? (i+1) : (i + (25 * pageNum)) + 1
 
-        var targetContainer = i < 3 ? top3 : statsGrid
+        var targetContainer
+        if (i < 3) {
+            targetContainer = top3
+        } else if (i < 28) {
+            targetContainer = statsGrid
+        } else {
+            targetContainer = bottom5
+        }
 
         if (card.parentElement !== targetContainer) {
             targetContainer.appendChild(card);
@@ -314,6 +327,7 @@ async function updatePage(transitionLength) {
     if (numPages <= 1) return
 
     var statsGrid = document.querySelector(".stats-grid")
+    var statsGridBottom = document.querySelector(".stats-grid-bottom")
 
     //distance from the top of the current page's first card
     var pageHeight = getPageHeight(3, 25)
@@ -322,9 +336,12 @@ async function updatePage(transitionLength) {
     //scroll the whole grid up smoothly
     statsGrid.style.transition = `transform ${transitionLength}ms ease-in-out`
     statsGrid.style.transform = `translateY(-${pageHeight}px)`
+    statsGridBottom.style.transition = `transform ${transitionLength}ms ease-in-out`
+    statsGridBottom.style.transform = `translateY(-${pageHeight}px)`
 
     await new Promise(resolve => {
         statsGrid.addEventListener('transitionend', resolve, { once: true })
+        statsGridBottom.addEventListener('transitionend', resolve, { once: true })
     })
 
     //A new page was generated, don't do the animation.
@@ -339,6 +356,11 @@ async function updatePage(transitionLength) {
     statsGrid.style.transform = 'translateY(0px)'
     void statsGrid.offsetHeight // force reflow before re-enabling transitions
     statsGrid.style.transition = ''
+
+    statsGridBottom.style.transition = 'none'
+    statsGridBottom.style.transform = 'translateY(0px)'
+    void statsGridBottom.offsetHeight // force reflow before re-enabling transitions
+    statsGridBottom.style.transition = ''
 }
 
 function getPageHeight(startIndex, pageSize) {
@@ -456,15 +478,32 @@ function orderRankComparator(a, b) {
 
     //If both finished, rank solely by time
     if (aFinished && bFinished) {
-    return timeToSeconds(a.time) - timeToSeconds(b.time) || a.twitch_name.localeCompare(b.twitch_name)
-}
+        return timeToSeconds(a.time) - timeToSeconds(b.time) || a.twitch_name.localeCompare(b.twitch_name)
+    }
     if (aFinished) return -1 //Finishers always rank higher than non finishers
     if (bFinished) return 1
 
-    return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
+    var aQuit = a.status != "running"
+    var bQuit = b.status != "running"
+
+    //One quit, still sort by num collected, and if they're the same, in-progress runner goes first
+    if (aQuit && !bQuit) {
+        return b.num_collected - a.num_collected || 1
+    }
+
+    if (bQuit && !aQuit) {
+        return b.num_collected - a.num_collected || -1
+    }
+
+    return b.num_collected - a.num_collected || timeToSeconds(a.estimate) - timeToSeconds(b.estimate) || a.twitch_name.localeCompare(b.twitch_name)
 }
 
 function orderDisplayComparator(a, b) {
+    //Stubbing this function out because I still prefer this order, but Blood wants the other order. I'm undecided so I'll just 
+    //keep the function as a comment
+    return orderRankComparator(a, b)
+
+    /*
     var aFinished = a.num_collected >= category.getTotalCollectibles(currentRaceCategory)
     var bFinished = b.num_collected >= category.getTotalCollectibles(currentRaceCategory)
 
@@ -489,7 +528,7 @@ function orderDisplayComparator(a, b) {
     if (bFinished) return -1
 
     //Neither finished. rank by progress, most collected first
-    return b.num_collected - a.num_collected || timeToSeconds(b.Estimate) - timeToSeconds(a.Estimate) || a.twitch_name.localeCompare(b.twitch_name)
+    return b.num_collected - a.num_collected || timeToSeconds(a.estimate) - timeToSeconds(b.estimate) || a.twitch_name.localeCompare(b.twitch_name)*/
 }
 
 function getPlacementMap(origPlayerRecords) {
@@ -519,6 +558,15 @@ function getPlacementMap(origPlayerRecords) {
             } else {
                 placementMap[r.twitch_name] = idx + 1
             }
+            return
+        }
+
+        //If one player has quit, the quitter always is behind the current racer
+        var prevQuit = prevPlayer.status != "running"
+        var rQuit = r.status != "running"
+        if (!prevQuit && rQuit) {
+            //Previous is still going but you quit, you're behind
+            placementMap[r.twitch_name] = idx + 1
             return
         }
 

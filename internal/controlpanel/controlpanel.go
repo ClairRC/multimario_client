@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+
+	"github.com/pkg/browser"
 )
 
 //Package for handling the web-based control panel that the end user can use
@@ -45,7 +47,8 @@ func InitControlPanel() {
 	mux.HandleFunc("GET /api/events", initSSE)
 
 	fmt.Printf("Hosting control panel on http://localhost%s\n", port)
-	http.ListenAndServe(ip+port, mux)
+	go http.ListenAndServe(ip+port, mux)
+	browser.OpenURL(fmt.Sprintf("http://localhost%s", port))
 }
 
 //Middleware to send latest updates to each channel whenever they call an endpoint

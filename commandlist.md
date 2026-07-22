@@ -97,7 +97,7 @@ Organizers should be very careful with this command and only use it to ensure th
 ### /organizers
 - Shows the list of organizers
 
-### /blacklish
+### /blacklist
 - Shows the blacklist
 
 ### /removeorganizer [twitch_name]
