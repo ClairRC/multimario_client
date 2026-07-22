@@ -1318,21 +1318,6 @@ func (s *store) loadOrganizerList(filePath string) {
 func (s *store) loadWhitelist(filePath string) {
 	//Racers and organizers are already on the whitelist
 	tempWhitelist := make(map[string]bool)
-	whiteListFile, err := os.Open(filePath)
-	if err != nil {
-		fmt.Printf("Error loading whitelist: %s\n", err.Error())
-		return
-	}
-
-	scanner := bufio.NewScanner(whiteListFile)
-	for scanner.Scan() {
-		tempWhitelist[strings.ToLower(scanner.Text())] = true
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Printf("Error reading whiteList: %s\n", err.Error())
-	}
-	whiteListFile.Close()
 
 	//Add players and organizers to whitelist
 	s.mu.RLock()
@@ -1351,10 +1336,28 @@ func (s *store) loadWhitelist(filePath string) {
 	}
 	organizerMu.RUnlock()
 
+	whiteListFile, err := os.Open(filePath)
+	if err != nil {
+		fmt.Printf("Error loading whitelist: %s\n", err.Error())
+	} else {
+		scanner := bufio.NewScanner(whiteListFile)
+		for scanner.Scan() {
+			tempWhitelist[strings.ToLower(scanner.Text())] = true
+		}
+
+		if err := scanner.Err(); err != nil {
+			fmt.Printf("Error reading whiteList: %s\n", err.Error())
+		}
+		whiteListFile.Close()
+	}
+
 	//Copy our temp whitelist to the actual whitelist
 	whitelistMu.Lock()
 	maps.Copy(whitelist, tempWhitelist)
 	whitelistMu.Unlock()
+
+	//Save organizers and racers to whitelist. Racers just get the free whitelist pass
+	go saveWhitelist(whitelistPath)
 }
 
 //Helper function for logging useful racer state information
