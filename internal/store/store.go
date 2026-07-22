@@ -121,6 +121,9 @@ var organizerList map[string]bool = make(map[string]bool)
 var blacklistMu sync.RWMutex
 var blacklist map[string]bool = make(map[string]bool)
 
+var whitelistMu sync.RWMutex
+var whitelist map[string]bool = make(map[string]bool)
+
 var exportedTimesMu sync.RWMutex
 var logStatesMu sync.RWMutex
 
@@ -129,6 +132,7 @@ var organizersPath = "./organizers.txt"
 var blacklistPath = "./blacklist.txt"
 var exportedTimesPath = "./results.json"
 var logStatesDir = "./race_data/"
+var whitelistPath = "./whitelist.txt"
 
 func (s *store) Subscribe(ctx context.Context, updateTypes ...UpdateType) (chan(State), chan(Update), context.CancelFunc) {
 	//Channels
@@ -194,7 +198,7 @@ func (s *store) LoadRace(raceID int) error {
 		return err
 	}
 
-	//Load organizer and blacklist
+	//Load organizers, blacklist, whitelist
 	s.loadBlacklist(blacklistPath)
 	s.loadOrganizerList(organizersPath)
 
@@ -252,7 +256,6 @@ func (s *store) LoadRace(raceID int) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.state = newState
 	s.info = raceInfo
 
@@ -263,6 +266,11 @@ func (s *store) LoadRace(raceID int) error {
 			default:
 		}
 	}
+	s.mu.Unlock()
+
+	//Do this at the end because the organizer list, blacklist, and player list must be loaded
+	//And also this function locks s.mu, so this needs to be after that is released
+	s.loadWhitelist(whitelistPath)
 
 	return nil
 }
@@ -284,6 +292,9 @@ func (s *store) GetRacerTwitchChannels() ([]string, error) {
 
 //Adds to player's count. Returns new number of collectibles
 func (s *store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error) {
+	//Make sure player is lowercase
+	playerTwitch = strings.ToLower(playerTwitch)
+
     s.mu.RLock()
     if !s.raceIsLoaded() {
         s.mu.RUnlock()
@@ -332,6 +343,9 @@ func (s *store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error)
 }
 
 func (s *store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
+	//Make sure player is lowercase
+	playerTwitch = strings.ToLower(playerTwitch)
+
 	s.mu.RLock()
     if !s.raceIsLoaded() {
         s.mu.RUnlock()
@@ -381,6 +395,9 @@ func (s *store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
 
 //Gets actual player name from their Twitch
 func (s *store) GetPlayerNameFromTwitch(playerTwitchName string) (string, error) {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+	
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if !s.raceIsLoaded() {
@@ -397,6 +414,9 @@ func (s *store) GetPlayerNameFromTwitch(playerTwitchName string) (string, error)
 func (s *store) UpdatePlayerName(playerTwitchName string, newName string) error {
 	//Get player name. Use their display name if possible
 	//This isn't necessary but it's faster for the API, but that's another can of worms
+	//Twitch names are lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
 	currentName := playerTwitchName
 	playerInLoadedRace := false
 
@@ -451,6 +471,9 @@ func (s *store) UpdatePlayerName(playerTwitchName string, newName string) error 
 }
 
 func (s *store) UpdateGameTime(playerTwitchName string, gameName string, newTime string) error {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
 	s.mu.Lock()
 	if !s.raceIsLoaded() {
 		s.mu.Unlock()
@@ -514,6 +537,9 @@ func (s *store) UpdateGameTime(playerTwitchName string, gameName string, newTime
 }
 
 func (s *store) UpdateFinalTime(playerTwitchName string, newTime string) error {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
 	s.mu.RLock()
 	if !s.raceIsLoaded() {
 		s.mu.RUnlock()
@@ -570,6 +596,9 @@ func (s *store) UpdateFinalTime(playerTwitchName string, newTime string) error {
 
 //Sets player's status to custom value
 func (s *store) SetPlayerStatus(playerTwitchName string, newStatus string) error {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
 	s.mu.Lock()
 	if !s.raceIsLoaded() {
 		s.mu.Unlock()
@@ -719,6 +748,8 @@ func (s *store) StartTimer() error {
 
 //Adds a user as an organizer
 func AddOrganizer(playerTwitchName string) {
+	//Make sure twitch name is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
 	organizerMu.Lock()
 	organizerList[playerTwitchName] = true
 	organizerMu.Unlock()
@@ -728,6 +759,9 @@ func AddOrganizer(playerTwitchName string) {
 
 //Removes user from organizer list
 func RemoveOrganizer(playerTwitchName string) {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+	
 	organizerMu.Lock()
 	organizerList[playerTwitchName] = false
 	organizerMu.Unlock()
@@ -737,6 +771,9 @@ func RemoveOrganizer(playerTwitchName string) {
 
 //Checks if a player is an organizer by twitch name
 func IsOrganizer(playerTwitchName string) bool {
+	//Make sure player is lowercase
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
 	organizerMu.RLock()
 	defer organizerMu.RUnlock()
 
@@ -745,20 +782,85 @@ func IsOrganizer(playerTwitchName string) bool {
 
 //Adds a user to blacklist
 func AddBlacklistUser(user string) {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
 	blacklistMu.Lock()
 	blacklist[user] = true
+
+	//This will also remove this person from the whitelist
+	whitelistUpdate := false
+	whitelistMu.Lock()
+	if whitelist[user] {
+		whitelist[user] = false
+		whitelistUpdate = true
+	}
+	whitelistMu.Unlock()
+
 	blacklistMu.Unlock()
 
 	go saveBlacklist(blacklistPath)
+	if whitelistUpdate {
+		go saveWhitelist(whitelistPath)
+	}
 }
 
 //Removes a user from blacklist
 func RemoveBlacklistUser(user string) {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
 	blacklistMu.Lock()
 	blacklist[user] = false
 	blacklistMu.Unlock()
 
 	go saveBlacklist(blacklistPath)
+}
+
+//Checks if a player is on blacklist by twitch name
+func IsOnBlacklist(user string) bool {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
+	blacklistMu.RLock()
+	defer blacklistMu.RUnlock()
+
+	return blacklist[user]
+}
+
+//Adds a user to whitelist
+func AddWhitelistUser(user string) {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
+	whitelistMu.Lock()
+	whitelist[user] = true
+	whitelistMu.Unlock()
+
+	go saveWhitelist(whitelistPath)
+}
+
+//Removes a user from whitelist
+func RemoveWhitelistUser(user string) {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
+	whitelistMu.Lock()
+	whitelist[user] = false
+	whitelistMu.Unlock()
+
+	go saveWhitelist(whitelistPath)
+}
+
+//Checks if a player is on whitelist by twitch name
+func IsOnWhitelist(user string) bool {
+	//Make sure player is lowercase
+	user = strings.ToLower(user)
+
+	whitelistMu.RLock()
+	defer whitelistMu.RUnlock()
+
+	return whitelist[user]
 }
 
 //Helper to save organizer list
@@ -770,6 +872,7 @@ func saveOrganizerList(filePath string) {
 		fmt.Printf("Error updating organizer list:%s\n", err.Error()) //Couldn't write, it's no biggie
 		return
 	}
+	defer organizerFile.Close()
 
 	//Write our data
 	for n, b := range organizerList {
@@ -792,6 +895,7 @@ func saveBlacklist(filePath string) {
 		fmt.Printf("Error updating blacklist: %s\n", err.Error()) //Couldn't write, it's no biggie
 		return
 	}
+	defer blacklistFile.Close()
 
 	//Write our data
 	for n, b := range blacklist {
@@ -805,12 +909,27 @@ func saveBlacklist(filePath string) {
 	}
 }
 
-//Checks if a player is an organizer by twitch name
-func IsOnBlacklist(user string) bool {
-	blacklistMu.RLock()
-	defer blacklistMu.RUnlock()
+//Saves whitelist
+func saveWhitelist(filePath string) {
+	whitelistMu.Lock()
+	defer whitelistMu.Unlock()
+	whitelistFile, err := os.OpenFile(filePath, os.O_WRONLY | os.O_CREATE | os.O_TRUNC, 0644)
+	if err != nil {
+		fmt.Printf("Error updating whitelist: %s\n", err.Error()) //Couldn't write, it's no biggie
+		return
+	}
+	defer whitelistFile.Close()
 
-	return blacklist[user]
+	//Write our data
+	for n, b := range whitelist {
+		if b {
+			_, err = fmt.Fprintln(whitelistFile, n)
+			if err != nil {
+				fmt.Printf("Error updating whitelist: %s\n", err.Error()) //Couldn't write, it's no biggie
+				continue
+			}
+		}
+	}
 }
 
 //Getter for getting current race category
@@ -1010,6 +1129,9 @@ func getCachedState(raceID int, cacheDir string) cachedState {
 
 //Gets s lock, so make sure it's unlocked before calling
 func (s *store) cachePlayerStatus(playerTwitch string, cacheDir string) error {
+	//Make sure player is lowercase
+	playerTwitch = strings.ToLower(playerTwitch)
+
 	s.mu.RLock()
 	raceID := s.state.RaceID
 	player, ok := s.state.Players[playerTwitch]
@@ -1162,7 +1284,7 @@ func (s *store) loadBlacklist(filePath string) {
 
 	scanner := bufio.NewScanner(blacklistFile)
 	for scanner.Scan() {
-		blacklist[scanner.Text()] = true
+		blacklist[strings.ToLower(scanner.Text())] = true
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -1183,12 +1305,56 @@ func (s *store) loadOrganizerList(filePath string) {
 
 	scanner := bufio.NewScanner(organizerListFile)
 	for scanner.Scan() {
-		organizerList[scanner.Text()] = true
+		organizerList[strings.ToLower(scanner.Text())] = true
 	}
 
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("Error reading organizer List: %s\n", err.Error())
 	}
+}
+
+
+//Loads whitelist
+func (s *store) loadWhitelist(filePath string) {
+	//Racers and organizers are already on the whitelist
+	tempWhitelist := make(map[string]bool)
+	whiteListFile, err := os.Open(filePath)
+	if err != nil {
+		fmt.Printf("Error loading whitelist: %s\n", err.Error())
+		return
+	}
+
+	scanner := bufio.NewScanner(whiteListFile)
+	for scanner.Scan() {
+		tempWhitelist[strings.ToLower(scanner.Text())] = true
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading whiteList: %s\n", err.Error())
+	}
+	whiteListFile.Close()
+
+	//Add players and organizers to whitelist
+	s.mu.RLock()
+	blacklistMu.RLock()
+	for _, player := range s.state.Players {
+		tempWhitelist[player.PlayerTwitch] = !blacklist[player.PlayerTwitch]
+	}
+	blacklistMu.RUnlock()
+	s.mu.RUnlock()
+
+	organizerMu.RLock()
+	for o, b := range organizerList {
+		if b {
+			tempWhitelist[o] = true
+		}
+	}
+	organizerMu.RUnlock()
+
+	//Copy our temp whitelist to the actual whitelist
+	whitelistMu.Lock()
+	maps.Copy(whitelist, tempWhitelist)
+	whitelistMu.Unlock()
 }
 
 //Helper function for logging useful racer state information

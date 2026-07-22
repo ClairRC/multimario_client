@@ -17,6 +17,11 @@
 - Same as !set. This is for legacy support for counting bots.
 - [twitch_name] is not optional.
 
+### !whitelist [twitch_name]
+- Whitelists the [twitch_name]
+- You must be whitelisted to whitelist somebody else
+- Racers are automatically whitelisted
+
 ## Racers
 ### !setname [new_name]
 - Sets your name on stats stream to [new_name]
@@ -87,6 +92,9 @@ Organizers should be very careful with this command and only use it to ensure th
 
 ### !addorganizer [twitch_name]
 - Adds a user as an organizer, allowing them to use the commands in this section.
+
+### !unwhitelist [twitch_name]
+- Removes [twitch_name] from the whitelist.
 
 # Host Command List
 ## Used by the race host in the control panel

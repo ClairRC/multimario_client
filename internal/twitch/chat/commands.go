@@ -23,7 +23,35 @@ var cmdLogPath = "./commands.log"
 var maxLogSize = 1000
 var logMu sync.RWMutex
 
-var stateMu sync.RWMutex
+//Removes a user from the whitelist
+func commandUnwhitelistUser(args []string, sender string) string {
+	//Only organizers can unwhitelist people
+	if len(args) != 1 || !store.IsOrganizer(sender) {
+		return ""
+	}
+
+	if !store.IsOnWhitelist(args[0]) {
+		return fmt.Sprintf("%s isn't whitelisted", args[0])
+	}
+
+	store.RemoveWhitelistUser(args[0])
+	return fmt.Sprintf("%s has been unwhitelisted", args[0])
+}
+
+//Adds a player to the whitelist
+func commandWhitelistUser(args []string, sender string) string {
+	//Only allowed to whitelist if the sender IS on the whitelist and the target is NOT on the blacklist
+	if len(args) != 1 || !store.IsOnWhitelist(sender) || store.IsOnBlacklist(args[0]) {
+		return ""
+	}
+
+	if store.IsOnWhitelist(args[0]) {
+		return fmt.Sprintf("%s is already white listed", args[0])
+	}
+
+	store.AddWhitelistUser(args[0])
+	return fmt.Sprintf("%s has been added to the whitelist", args[0])
+}
 
 //Removes user from blacklist
 func commandUnblacklistUser(args []string, sender string) string {
@@ -262,6 +290,11 @@ func commandBotSet(args []string, sender string) string {
 		return "" //Do nothing
 	}
 
+	//Only allow whitelisted users to do this
+	if !store.IsOnWhitelist(sender) {
+		return "Cannot update player count: User is not whitelisted"
+	}
+
 	targetPlayer := strings.ToLower(args[0])
 	numToSet, err := strconv.Atoi(args[1])
 	if err != nil {
@@ -365,6 +398,11 @@ func commandSet(args []string, sender string) string {
 		return "" //Do nothing
 	}
 
+	//Only allow whitelisted users to do this
+	if !store.IsOnWhitelist(sender) {
+		return "Cannot update player count: User is not whitelisted"
+	}
+
 	var targetPlayer string
 	var numToSet int
 	if len(args) == 1 {
@@ -412,6 +450,11 @@ func commandAdd(args []string, sender string) string {
 	//This command only takes at most 2 arguments
 	if len(args) > 2 || len(args) == 0 {
 		return "" //Do nothing
+	}
+
+	//Only allow whitelisted users to do this
+	if !store.IsOnWhitelist(sender) {
+		return "Cannot update player count: User is not whitelisted"
 	}
 
 	var targetPlayer string
@@ -476,6 +519,8 @@ func executeCommand(command string, sender string) string {
 	//Log this command
 	go logCommand(fmt.Sprintf("%s: %s", sender, command), cmdLogPath)
 
+	sender = strings.ToLower(sender) //just to make sure that this is lowercase 
+
 	//If user is on blacklist, do nothing
 	if store.IsOnBlacklist(sender) {
 		return ""
@@ -484,11 +529,17 @@ func executeCommand(command string, sender string) string {
 	args := strings.Split(command, " ")
 	comm := args[0]
 
+	//Lowercase all the args and command just to normalize it all
+	comm = strings.ToLower(comm)
+	for i := range args {
+		args[i] = strings.ToLower(args[i])
+	}
+
 	if chatCommands[comm] == nil {
 		return "Unknown command"
 	}
 
-	return chatCommands[comm](args[1:], strings.ToLower(sender))
+	return chatCommands[comm](args[1:], sender)
 }
 
 //Logs command
@@ -597,4 +648,6 @@ func initCommands() {
 	chatCommands["!mmhelp"] = commandMMHelp
 	chatCommands["!blacklist"] = commandBlacklistUser
 	chatCommands["!unblacklist"] = commandUnblacklistUser
+	chatCommands["!whitelist"] = commandWhitelistUser
+	chatCommands["!unwhitelist"] = commandUnwhitelistUser
 }

@@ -110,7 +110,7 @@ func GetGameProgress(category string, numCollectibles int) int {
 }
 
 func GetGameCategoryFromGameName(raceCategory string, gameName string) string {
-	cat, ok := categories [raceCategory]
+	cat, ok := categories[raceCategory]
 	if !ok {
 		return ""
 	}
