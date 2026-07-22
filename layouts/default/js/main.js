@@ -3,8 +3,6 @@ import * as player from './player_card.js'
 import * as category from './category_info.js'
 import * as timer from './timer.js'
 
-
-
 //This code is high key a mess godspeed
 
 /*TODO:
@@ -21,10 +19,13 @@ var updateText = {}
 
 //Durations (ms) for how long to STAY on each page before turning, indexed by page number.
 //Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
-const pageDurations = [30000, 20000, 15000] // 30s, 20s, 15s
-const fallbackPageDuration = 10000 // any page beyond the list above uses this
+const pageDurations = [2000, 2000, 2000] // 30s, 20s, 15s
+const fallbackPageDuration = 2000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
+
+const cardsPerPage = 25
+const nextPageEnd = 3 + cardsPerPage * 2
 
 var pageGeneration = 0 //So that functions running asyncronously can tell when onInit has been called again so they don't run
 
@@ -50,6 +51,12 @@ onInit((data) => {
     //Clear out the player cards since this is init
     statsGrid.innerHTML = ""
     top3.innerHTML = ""
+    statsGridBottom.innerHTML = ""
+
+    statsGrid.style.transition = 'none'
+    statsGrid.style.transform = 'translateY(0px)'
+    statsGridBottom.style.transition = 'none'
+    statsGridBottom.style.transform = 'translateY(0px)'
 
     var playerRecords = data.records
 
@@ -76,20 +83,31 @@ onInit((data) => {
         currentPlayerPlacements.push(record)
     });
 
+    var remainder = (currentPlayerPlacements.length - 3) % 25
+    var paddingNeeded = remainder === 0 ? 0 : 25 - remainder
+
     //Add placeholder cards to the DOM just for page switching
     for(let i = 0; i < 25; i++) {
         statsGridBottom.innerHTML += player.getPlaceHolderCard(`__placeholder${i}`)
     }
 
-    //For placeholders that are not on screen, set their display to none so they don't get in the way
-    for (let i = 0; i < ((currentPlayerPlacements.length-3) % 25); i++) {
+    //Add exactly the placeholders needed to round out the last page
+    for (let i = 0; i < paddingNeeded; i++) {
+        currentPlayerPlacements.push({"twitch_name": `__placeholder${i}`, isPlaceHolder: true})
+    }
+
+    //Hide whichever placeholder cards weren't used
+    for (let i = paddingNeeded; i < 25; i++) {
         var card = document.getElementById(`__placeholder${i}`)
         card.style.display = "none"
     }
 
-    while((currentPlayerPlacements.length-3) % 25 !== 0) {
-        currentPlayerPlacements.push({"twitch_name": `__placeholder${(currentPlayerPlacements.length-3) % 25}`, isPlaceHolder: true})
+    playerRecords.forEach((record, i) => {
+    if (i >= nextPageEnd) {
+        var card = document.getElementById(record.twitch_name)
+        if (card) card.style.display = "none"
     }
+})
 
     //Reset timer and set current timer value
     timer.timerUpdate(data)
@@ -247,22 +265,13 @@ function updatePlayerCards() {
     sortPlayers()
 
     var playerRecords = currentPlayerPlacements
-
-    //Extract placeholder records
-    var realRecordsSorted = playerRecords
-        .filter(r => !r.isPlaceHolder)
-        .slice()
+    var realRecordsSorted = playerRecords.filter(r => !r.isPlaceHolder).slice()
     realRecordsSorted.sort(orderRankComparator)
-
     var placementMap = getPlacementMap(realRecordsSorted)
 
-    //Get each player's card and sauce them on the screen
     playerRecords.forEach((record, i) => {
         var card = document.getElementById(record.twitch_name)
-
         card.style.order = i
-
-        var playerPlacementNum = i < 3 ? (i+1) : (i + (25 * pageNum)) + 1
 
         var targetContainer
         if (i < 3) {
@@ -277,7 +286,9 @@ function updatePlayerCards() {
             targetContainer.appendChild(card);
         }
 
-        card.style.order = i
+        // Only the current page + the immediate next page should take up space.
+        // Anything further out is just waiting its turn — keep it out of the layout.
+        card.style.display = (i < nextPageEnd) ? "" : "none"
 
         if (record.isPlaceHolder) {
             return
