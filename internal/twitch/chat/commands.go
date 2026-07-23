@@ -30,7 +30,7 @@ func commandUnwhitelistUser(args []string, sender string) string {
 		return ""
 	}
 
-	if !store.IsOnWhitelist(args[0]) {
+	if !store.IsOnWhitelist(strings.ToLower(args[0])) {
 		return fmt.Sprintf("%s isn't whitelisted", args[0])
 	}
 
@@ -45,11 +45,11 @@ func commandWhitelistUser(args []string, sender string) string {
 		return ""
 	}
 
-	if store.IsOnWhitelist(args[0]) {
+	if store.IsOnWhitelist(strings.ToLower(args[0])) {
 		return fmt.Sprintf("%s is already white listed", args[0])
 	}
 
-	store.AddWhitelistUser(args[0])
+	store.AddWhitelistUser(strings.ToLower(args[0]))
 	return fmt.Sprintf("%s has been added to the whitelist", args[0])
 }
 
@@ -59,7 +59,7 @@ func commandUnblacklistUser(args []string, sender string) string {
 		return ""
 	}
 
-	store.RemoveBlacklistUser(args[0])
+	store.RemoveBlacklistUser(strings.ToLower(args[0]))
 
 	return args[0] + " has been un-blacklisted"
 }
@@ -70,7 +70,7 @@ func commandBlacklistUser(args []string, sender string) string {
 		return ""
 	}
 
-	store.AddBlacklistUser(args[0])
+	store.AddBlacklistUser(strings.ToLower(args[0]))
 
 	return args[0] + " has been blacklisted"
 }
@@ -90,7 +90,7 @@ func commandAddOrganizer(args []string, sender string) string {
 		return ""
 	}
 
-	store.AddOrganizer(args[0])
+	store.AddOrganizer(strings.ToLower(args[0]))
 
 	return args[0] + " has been added as an organizer"
 }
@@ -138,7 +138,7 @@ func commandRevive(args []string, sender string) string {
 		return ""
 	}
 
-	targetPlayer := args[0]
+	targetPlayer := strings.ToLower(args[0])
 
 	//Update status to Forfeit
 	err := store.Race.SetPlayerStatus(targetPlayer, "running")
@@ -156,7 +156,7 @@ func commandDQ(args []string, sender string) string {
 		return ""
 	}
 
-	targetPlayer := args[0]
+	targetPlayer := strings.ToLower(args[0])
 
 	//Update status to Forfeit
 	err := store.Race.SetPlayerStatus(targetPlayer, "Disqualified")
@@ -174,7 +174,7 @@ func commandNoShow(args []string, sender string) string {
 		return ""
 	}
 
-	targetPlayer := args[0]
+	targetPlayer := strings.ToLower(args[0])
 
 	//Update status to Forfeit
 	err := store.Race.SetPlayerStatus(targetPlayer, "No-show")
@@ -192,7 +192,7 @@ func commandForceQuit(args []string, sender string) string {
 		return ""
 	}
 
-	targetPlayer := args[0]
+	targetPlayer := strings.ToLower(args[0])
 
 	//Update status to Forfeit
 	err := store.Race.SetPlayerStatus(targetPlayer, "Forfeit")
@@ -216,7 +216,7 @@ func commandMMLeave(args []string, sender string) string {
 		if !store.IsOrganizer(sender) {
 			return ""
 		} else {
-			targetUser = args[0]
+			targetUser = strings.ToLower(args[0])
 		}
 	}
 
@@ -240,7 +240,7 @@ func commandMMJoin(args []string, sender string) string {
 		if !store.IsOrganizer(sender) {
 			return ""
 		} else {
-			targetUser = args[0]
+			targetUser = strings.ToLower(args[0])
 		}
 	}
 
@@ -327,7 +327,7 @@ func commandSetFinalTime(args []string, sender string) string {
 		if !store.IsOrganizer(sender) {
 			return ""
 		}
-		targetPlayer = args[0]
+		targetPlayer = strings.ToLower(args[0])
 		newTime = args[1]
 	}
 
@@ -353,7 +353,7 @@ func commandSetGameTime(args []string, sender string) string {
 		if !store.IsOrganizer(sender) {
 			return ""
 		}
-		targetPlayer = args[0]
+		targetPlayer = strings.ToLower(args[0])
 		gameName = args[1]
 		newTime = args[2]
 	}
@@ -379,7 +379,7 @@ func commandSetName(args []string, sender string) string {
 		if !store.IsOrganizer(sender) {
 			return ""
 		}
-		targetPlayer = args[0]
+		targetPlayer = strings.ToLower(args[0])
 		newName = args[1]
 	}
 
@@ -527,13 +527,7 @@ func executeCommand(command string, sender string) string {
 	}
 
 	args := strings.Split(command, " ")
-	comm := args[0]
-
-	//Lowercase all the args and command just to normalize it all
-	comm = strings.ToLower(comm)
-	for i := range args {
-		args[i] = strings.ToLower(args[i])
-	}
+	comm := strings.ToLower(args[0])
 
 	if chatCommands[comm] == nil {
 		return "Unknown command"
