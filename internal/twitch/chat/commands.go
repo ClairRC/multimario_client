@@ -140,8 +140,18 @@ func commandRevive(args []string, sender string) string {
 
 	targetPlayer := strings.ToLower(args[0])
 
+	//Only allowed to quit if player isn't already quit
+	status, err := store.Race.GetPlayerStatus(targetPlayer)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if status == "running" {
+		return fmt.Sprintf("Cannot unquit, %s is still in the race.", targetPlayer)
+	}
+
 	//Update status to Forfeit
-	err := store.Race.SetPlayerStatus(targetPlayer, "running")
+	err = store.Race.SetPlayerStatus(targetPlayer, "running")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -158,8 +168,18 @@ func commandDQ(args []string, sender string) string {
 
 	targetPlayer := strings.ToLower(args[0])
 
+	//Only allowed to quit if player isn't already finished
+	finished, err := store.Race.PlayerIsFinished(targetPlayer)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if finished {
+		return fmt.Sprintf("Cannot disqualify, %s is already finished.", targetPlayer)
+	}
+
 	//Update status to Forfeit
-	err := store.Race.SetPlayerStatus(targetPlayer, "Disqualified")
+	err = store.Race.SetPlayerStatus(targetPlayer, "Disqualified")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -176,8 +196,18 @@ func commandNoShow(args []string, sender string) string {
 
 	targetPlayer := strings.ToLower(args[0])
 
+	//Only allowed to quit if player isn't already finished
+	finished, err := store.Race.PlayerIsFinished(targetPlayer)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if finished {
+		return fmt.Sprintf("Cannot set player to no-show, %s is already finished.", targetPlayer)
+	}
+
 	//Update status to Forfeit
-	err := store.Race.SetPlayerStatus(targetPlayer, "No-show")
+	err = store.Race.SetPlayerStatus(targetPlayer, "No-show")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -194,8 +224,18 @@ func commandForceQuit(args []string, sender string) string {
 
 	targetPlayer := strings.ToLower(args[0])
 
+	//Only allowed to quit if player isn't already finished
+	finished, err := store.Race.PlayerIsFinished(targetPlayer)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if finished {
+		return fmt.Sprintf("Cannot quit, %s is already finished.", targetPlayer)
+	}
+
 	//Update status to Forfeit
-	err := store.Race.SetPlayerStatus(targetPlayer, "Forfeit")
+	err = store.Race.SetPlayerStatus(targetPlayer, "Forfeit")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -257,8 +297,18 @@ func commandUnquit(args []string, sender string) string {
 		return ""
 	}
 
+	//Only allowed to quit if player isn't already quit
+	status, err := store.Race.GetPlayerStatus(sender)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if status == "running" {
+		return fmt.Sprintf("Cannot unquit, %s is still in the race.", sender)
+	}
+
 	//Update the player's status
-	err := store.Race.SetPlayerStatus(sender, "running")
+	err = store.Race.SetPlayerStatus(sender, "running")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -273,8 +323,18 @@ func commandQuit(args []string, sender string) string {
 		return ""
 	}
 
+	//Only allowed to quit if player isn't already finished
+	finished, err := store.Race.PlayerIsFinished(sender)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err.Error())
+	}
+
+	if finished {
+		return fmt.Sprintf("Cannot quit, %s is already finished.", sender)
+	}
+
 	//Update the player's status
-	err := store.Race.SetPlayerStatus(sender, "Quit")
+	err = store.Race.SetPlayerStatus(sender, "Quit")
 	if err != nil {
 		return fmt.Sprintf("Error: %s", err.Error())
 	}
@@ -368,7 +428,7 @@ func commandSetGameTime(args []string, sender string) string {
 
 //Sets player's onscreen name
 func commandSetName(args []string, sender string) string {
-	if len(args) > 2 || len(args) == 0 {
+	if len(args) > 2 || len(args) == 0 || !store.IsOrganizer(sender) {
 		return ""
 	}
 
@@ -439,10 +499,21 @@ func commandSet(args []string, sender string) string {
 	//Log this update if there is a race in progress
 	go store.Race.LogPlayerState(targetPlayer, newNum)
 
-	return fmt.Sprintf("%s now has %v %s in %s.", 
+	//Get output
+	outMessage := fmt.Sprintf("%s now has %v %s in %s.", 
 		targetPlayer, categoryinfo.GetGameProgress(raceCat, newNum), 
 		categoryinfo.GetCollectibleType(raceCat, newNum), 
 		categoryinfo.CurrentGameName(raceCat, newNum))
+
+	//Get this player's placement
+	placement, err := store.Race.GetPlayerPlacement(targetPlayer)
+
+	//No error, add placement to output message
+	if err == nil {
+		outMessage = fmt.Sprintf("%s (%s Place)", outMessage, placement)
+	}
+
+	return outMessage
 }
 
 //Adds count based on number of arguments in the command
@@ -493,10 +564,21 @@ func commandAdd(args []string, sender string) string {
 	//Log this update if there is a race in progress
 	go store.Race.LogPlayerState(targetPlayer, newNum)
 
-	return fmt.Sprintf("%s now has %v %s in %s.", 
+	//Get output
+	outMessage := fmt.Sprintf("%s now has %v %s in %s.", 
 		targetPlayer, categoryinfo.GetGameProgress(raceCat, newNum), 
 		categoryinfo.GetCollectibleType(raceCat, newNum), 
 		categoryinfo.CurrentGameName(raceCat, newNum))
+
+	//Get this player's placement
+	placement, err := store.Race.GetPlayerPlacement(targetPlayer)
+
+	//No error, add placement to output message
+	if err == nil {
+		outMessage = fmt.Sprintf("%s (%s Place)", outMessage, placement)
+	}
+
+	return outMessage
 }
 
 //Takes a string and checks if it is a command for this bot

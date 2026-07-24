@@ -16,7 +16,7 @@ var updateText = {}
 
 //Durations (ms) for how long to STAY on each page before turning, indexed by page number.
 //Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
-const pageDurations = [30000, 20000, 15000] // 30s, 20s, 15s
+const pageDurations = [5000, 5000, 5000] // 30s, 20s, 15s
 const fallbackPageDuration = 10000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
@@ -58,6 +58,11 @@ onInit((data) => {
     playerRecords.sort(orderDisplayComparator)
 
     playerRecords.forEach((record, i) => {
+        //Make sure that if the twitch name hasn't been changed, we apply proper capitalization
+        if (record.player_name === record.twitch_name) {
+            record.player_name = record.twitch_display_name
+        }
+
         var card = player.getPlayerCard(record.player_name, record.twitch_name, placementMap[record.twitch_name], record.pfp_url, record.num_collected, record.status, record.time, data.race_category)
         var isInTop3 = i <= 2
         var isNormal = i < 28
@@ -82,30 +87,30 @@ onInit((data) => {
         statsGridBottom.innerHTML += player.getPlaceHolderCard(`__placeholder${i}`)
     }
 
-    //Add exactly the placeholders needed to round out the last page
-    for (let i = 0; i < paddingNeeded; i++) {
-        currentPlayerPlacements.push({"twitch_name": `__placeholder${i}`, isPlaceHolder: true})
-    }
+    document.fonts.ready.then(() => {
+        fixAllTextSizing()
 
-    //Hide whichever placeholder cards weren't used
-    for (let i = paddingNeeded; i < 25; i++) {
-        var card = document.getElementById(`__placeholder${i}`)
-        card.style.display = "none"
-    }
+        //Add exactly the placeholders needed to round out the last page
+        for (let i = 0; i < paddingNeeded; i++) {
+            currentPlayerPlacements.push({"twitch_name": `__placeholder${i}`, isPlaceHolder: true})
+        }
 
-    playerRecords.forEach((record, i) => {
-    if (i >= nextPageEnd) {
-        var card = document.getElementById(record.twitch_name)
-        if (card) card.style.display = "none"
-    }
-})
+        //Hide whichever placeholder cards weren't used
+        for (let i = paddingNeeded; i < 25; i++) {
+            var card = document.getElementById(`__placeholder${i}`)
+            card.style.display = "none"
+        }
+
+        playerRecords.forEach((record, i) => {
+            if (i >= nextPageEnd) {
+                var card = document.getElementById(record.twitch_name)
+                if (card) card.style.display = "none"
+            }
+        })
+    });
 
     //Reset timer and set current timer value
     timer.timerUpdate(data)
-
-    document.fonts.ready.then(() => {
-        fixAllTextSizing()
-    });
 
     schedulePageTurn()
 })
@@ -317,7 +322,7 @@ function fixCardTextSizing(cardElement) {
     //Get user name elements to fit them properly
     var userNames = cardElement.querySelectorAll(".user-name")
     userNames.forEach(element => {
-        player.fitText(element, 1.9, 1.4)
+        player.fitText(element, 2.2, 1.3)
     });
 
     var progressValues = cardElement.querySelectorAll(".game-progress")
@@ -330,7 +335,14 @@ function fixCardTextSizing(cardElement) {
     var quitText = cardElement.querySelectorAll(".quit-text")
     quitText.forEach(element => {
         if (element.style.display !== "none") {
-            player.fitText(element, 3.0, 0.5)
+            player.fitText(element, 3.0, 0.0)
+        }
+    });
+
+    var userPos = cardElement.querySelectorAll(".user-position")
+    userPos.forEach(element => {
+        if (element.style.display !== "none") {
+            player.fitText(element, 2.8, 1.5)
         }
     });
 }
@@ -339,7 +351,7 @@ function fixAllTextSizing() {
     //Get user name elements to fit them properly
     var userNames = document.querySelectorAll(".user-name")
     userNames.forEach(element => {
-        player.fitText(element, 1.9, 1.4)
+        player.fitText(element, 2.2, 1.3)
     });
 
     var progressValues = document.querySelectorAll(".game-progress")
@@ -352,7 +364,14 @@ function fixAllTextSizing() {
     var quitText = document.querySelectorAll(".quit-text")
     quitText.forEach(element => {
         if (element.style.display !== "none") {
-            player.fitText(element, 3.0, 0.5)
+            player.fitText(element, 3.0, 0.0)
+        }
+    });
+
+    var userPos = document.querySelectorAll(".user-position")
+    userPos.forEach(element => {
+        if (element.style.display !== "none") {
+            player.fitText(element, 2.8, 1.5)
         }
     });
 

@@ -124,3 +124,12 @@ func GetGameCategoryFromGameName(raceCategory string, gameName string) string {
 
 	return gameCategory
 }
+
+func GetTotalCollectiblesFromCategoryName(raceCategory string) int {
+	cat, ok := categories[raceCategory]
+	if !ok {
+		return -1
+	}
+
+	return cat.TotalNumCollectibles
+}

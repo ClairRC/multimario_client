@@ -2,12 +2,14 @@ package store
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -64,6 +66,7 @@ type PlayerInfo struct {
 	NumCollected float64 `json:"num_collected"`
 	Player string `json:"player_name"`
 	PlayerTwitch string `json:"twitch_name"`
+	PlayerTwitchDisplayName string `json:"twitch_display_name"`
 	FinalTime string `json:"time"`
 	Estimate string `json:"estimate"`
 	Status string `json:"status"`
@@ -212,6 +215,7 @@ func (s *store) LoadRace(raceID int) error {
 			NumCollected: p.NumCollected,
 			Player: p.Player,
 			PlayerTwitch: p.PlayerTwitch,
+			PlayerTwitchDisplayName: "",
 			FinalTime: p.FinalTime,
 			Estimate: p.Estimate,
 			Status: "running",
@@ -228,6 +232,7 @@ func (s *store) LoadRace(raceID int) error {
 		pInfo := playerNameMap[u.Login]
 		if pInfo != nil {
 			pInfo.ProfilePictureURL = u.ProfilePictureURL 
+			pInfo.PlayerTwitchDisplayName = u.DisplayName
 		}
 	}
 
@@ -307,6 +312,11 @@ func (s *store) AddToPlayerCount(numToAdd int, playerTwitch string) (int, error)
         return -1, errors.New("player is not in this race")
     }
 
+	//Only allow this if player is still running in the race
+	if p.Status != "running" {
+		return -1, errors.New("can't update player count for player who is no longer in the race")
+	}
+
     newNum, err := mmapi.IncrementPlayerCount(raceID, p.Player, numToAdd)
     if err != nil {
         return -1, err
@@ -357,6 +367,11 @@ func (s *store) SetPlayerCount(numToSet int, playerTwitch string) (int, error) {
     if !ok {
         return -1, errors.New("player is not in this race")
     }
+
+	//Only allow this if player is still running in the race
+	if p.Status != "running" {
+		return -1, errors.New("can't update player count for player who is no longer in the race")
+	}
 
     newNum, err := mmapi.SetPlayerCount(raceID, p.Player, numToSet)
     if err != nil {
@@ -633,6 +648,46 @@ func (s *store) SetPlayerStatus(playerTwitchName string, newStatus string) error
 	//Cache this status
 	go s.cachePlayerStatus(playerTwitchName, cacheDir)
 	return nil
+}
+
+func (s *store) GetPlayerStatus(playerTwitchName string) (string, error) {
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
+	//Get race information
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	if !s.raceIsLoaded() {
+		return "", noRaceLoadedErr
+	}
+
+	//Only do this if the racer is in the race
+	p, ok := s.state.Players[playerTwitchName]
+	if !ok {
+		return "", fmt.Errorf("%s is not in this race", playerTwitchName)
+	}
+
+	return p.Status, nil
+}
+
+func (s *store) PlayerIsFinished(playerTwitchName string) (bool, error) {
+	playerTwitchName = strings.ToLower(playerTwitchName)
+
+	//Get race information
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if !s.raceIsLoaded() {
+		return false, noRaceLoadedErr
+	}
+
+	//Only do this if the racer is in the race
+	p, ok := s.state.Players[playerTwitchName]
+	if !ok {
+		return false, fmt.Errorf("%s is not in this race", playerTwitchName)
+	}
+
+	return p.NumCollected >= float64(categoryinfo.GetTotalCollectiblesFromCategoryName(s.info.Category)), nil
 }
 
 //Sets player's status to custom value
@@ -1082,6 +1137,51 @@ func (s *store) ExportTimes() error {
 	return err
 }
 
+//Takes a player name and gets their placement. Returns a string of place with the suffix (1st, 2nd, etc.)
+func (s *store) GetPlayerPlacement(playerTwitch string) (string, error) {
+	//Lowercase Twitch name
+	playerTwitch = strings.ToLower(playerTwitch)
+	
+	//Read data from race state
+	s.mu.RLock()
+	//Make sure player is still in the race
+	if _, ok := s.state.Players[strings.ToLower(playerTwitch)]; !ok {
+		s.mu.RUnlock()
+		return "", fmt.Errorf("%s is not in this race.", playerTwitch)
+	}
+
+	//Copy the player map for sorting
+	playersSlice := slices.Collect(maps.Values(s.state.Players))
+	catName := s.info.Category
+	raceID := s.state.RaceID
+	s.mu.RUnlock()
+
+	//TODO: maybe change this? This is only like 2n + nlogn each time the function is called, so its' not awful,
+	//but if its a bottleneck a separate data structure like a heap or something for rankings could be nice
+	//Sort players based on their placement
+	slices.SortFunc(playersSlice, func(a, b *PlayerInfo) int {
+		return playerRankingSortingFunc(a, b, catName)
+	})
+
+	//Get the player's ranking using the sorted slice
+	placementMap := getPlayerPlacementMap(playersSlice, catName)
+
+	//Finally, make sure race is the same and player is still in the race
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if _, ok := s.state.Players[strings.ToLower(playerTwitch)]; !ok {
+		return "", fmt.Errorf("%s is not in this race.", playerTwitch)
+	}
+
+	if catName != s.info.Category || raceID != s.state.RaceID {
+		return "", errors.New("Can't get player placement, race state has changed")
+	}
+
+	//Convert the placement into a string with the suffix
+	out := fmt.Sprintf("%v%s", placementMap[playerTwitch], getPlacementSuffix(placementMap[playerTwitch]))
+	return out, nil
+}
+
 //Returns a copy of the current organizer list
 func (s *store) GetOrganizerList() map[string]bool {
 	organizerMu.RLock()
@@ -1425,4 +1525,121 @@ func getStartTimeFromTimeString(timeString string) (int64, error) {
 	totalMillis := int64(hoursNum) * 3600 * 1000 + int64(minutesNum) * 60 * 1000 + int64(secondsNum) * 1000
 	startTime := time.Now().UnixMilli() - totalMillis //Get start time in millis
 	return startTime, nil
+}
+
+//Helper to sort players based on their race progress
+func playerRankingSortingFunc(a *PlayerInfo, b *PlayerInfo, category string) int {
+	totalCatCollectibles := categoryinfo.GetTotalCollectiblesFromCategoryName(category)
+
+	aFinished := a.NumCollected >= float64(totalCatCollectibles)
+	bFinished := b.NumCollected >= float64(totalCatCollectibles)
+
+	//Both players finish, lowest final time wins. Otherwise, go by alphabetical order
+	if aFinished && bFinished {
+		res := cmp.Compare(a.FinalTime, b.FinalTime)
+		if res == 0 {
+			res = cmp.Compare(a.PlayerTwitch, b.PlayerTwitch)
+		}
+		return res
+	}
+
+	//Finishers rank before non-finishers
+	if aFinished { return -1 }
+	if bFinished { return 1 }
+
+	aQuit := a.Status != "running"
+	bQuit := b.Status != "running"
+
+	//Sort by num collected first, in a tie the quitter goes second
+	if aQuit && !bQuit {
+		res := cmp.Compare(b.NumCollected, a.NumCollected)
+		if res == 0 {
+			res = 1
+		}
+		return res
+	}
+
+	if bQuit && !aQuit {
+		res := cmp.Compare(b.NumCollected, a.NumCollected)
+		if res == 0 {
+			res = -1
+		}
+		return res
+	}
+
+	//Finally, sort normally if both players are still going
+	res := cmp.Compare(b.NumCollected, a.NumCollected)
+	if res == 0 {
+		res = cmp.Compare(a.FinalTime, b.FinalTime)
+	}
+	if res == 0 {
+		res = cmp.Compare(a.PlayerTwitch, b.PlayerTwitch)
+	}
+
+	return res
+}
+
+//Helper to return the map of players and their placement
+func getPlayerPlacementMap(sortedPlayerList []*PlayerInfo, category string) map[string]int {
+	totalCatCollectibles := categoryinfo.GetTotalCollectiblesFromCategoryName(category)
+	res := make(map[string]int)
+
+	for i, p := range sortedPlayerList {
+		//First index is 1st place no matter what
+		if i == 0 {
+			res[p.PlayerTwitch] = i + 1
+			continue
+		}
+
+		prevPlayer := sortedPlayerList[i - 1]
+
+		prevFinished := prevPlayer.NumCollected >= float64(totalCatCollectibles)
+		pFinished := p.NumCollected >= float64(totalCatCollectibles)
+
+		//Both players are finished, tie them if times are the same
+		if prevFinished && pFinished {
+			if prevPlayer.FinalTime == p.FinalTime {
+				res[p.PlayerTwitch] = res[prevPlayer.PlayerTwitch]
+			} else {
+				res[p.PlayerTwitch] = i + 1
+			}
+			continue
+		}
+
+		//If one player has quit, the quitter is always behind
+		prevQuit := prevPlayer.Status != "running"
+		pQuit := p.Status != "running"
+		if !prevQuit && pQuit {
+			res[p.PlayerTwitch] = i + 1
+			continue
+		}
+
+		if prevPlayer.NumCollected == p.NumCollected {
+			res[p.PlayerTwitch] = res[prevPlayer.PlayerTwitch]
+			continue
+		}
+
+		//Finally, go by index
+		res[p.PlayerTwitch] = i + 1
+	}
+
+	return res
+}
+
+//Helper to get suffix for a number
+func getPlacementSuffix(num int) string {
+	if num % 100 >= 11 && num % 100 <= 13 {
+		return "th"
+	}
+
+	switch num % 10 {
+	case 1:
+		return "st"
+	case 2:
+		return "nd"
+	case 3:
+		return "rd"
+	default:
+		return "th"
+	}
 }

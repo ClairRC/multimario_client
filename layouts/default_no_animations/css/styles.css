@@ -24,7 +24,8 @@ body {
 
 .header-info {
     display: flex;
-    height: 18%;
+    height: 17.8%;
+    margin-top: -0.3%;
     margin-bottom: 0.3%;
 }
 
@@ -41,9 +42,10 @@ body {
     grid-template-columns: repeat(auto-fill, 18vw);
     overflow: hidden;
     justify-content: center;
-    column-gap: 1vw;
-    row-gap: 0.6vw;
+    column-gap: 1.2vw;
+    row-gap: 0.42vw;
     margin-bottom: 0.5%;
+    margin-right: 0.7%;
 }
 
 .stats-grid-bottom {
@@ -51,20 +53,21 @@ body {
     grid-template-columns: repeat(auto-fill, 18vw);
     overflow: hidden;
     justify-content: center;
-    column-gap: 1vw;
-    row-gap: 0.6vw;
+    column-gap: 1.2vw;
+    row-gap: 0.42vw;
     margin-bottom: 0.5%;
+    margin-right: 0.7%;
     padding-top: 2%;
 }
 
 .stats-grid-bottom .player-box {
-    width: 17.8vw;
-    aspect-ratio: 13/6;
+    width: 18.55Vw;
+    aspect-ratio: 13.3/6;
 }
 
 .stats-grid .player-box {
-    width: 17.8vw;
-    aspect-ratio: 13/6;
+    width: 18.55vw;
+    aspect-ratio: 13.3/6;
 }
 
 .top-3 .player-box {
@@ -72,6 +75,13 @@ body {
     margin: auto;
     height: 90%;
     aspect-ratio: 13/6;
+}
+
+.placeholder {
+    visibility: none;
+    pointer-events: none;
+    width: 18.55vw;
+    aspect-ratio: 13.3/6;
 }
 
 .player-box {
@@ -191,13 +201,6 @@ body {
 .grid-scroller {
     height: 100%;
     overflow-y: hidden;
-}
-
-.placeholder {
-    visibility: none;
-    pointer-events: none;
-    width: 18vw;
-    aspect-ratio: 13/6;
 }
 
 .quit-text {
