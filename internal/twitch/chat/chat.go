@@ -510,7 +510,7 @@ func extractMessage(line string) string {
 func extractChannelName(line string) string {
 	parts := strings.Split(line, "PRIVMSG #")
 	channel := ""
-	if len(parts) > 0 {
+	if len(parts) > 1 {
 		channel = strings.Split(parts[1], " :")[0]
 	}
 
