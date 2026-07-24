@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/multimario_client/internal/twitch"
@@ -26,6 +27,7 @@ type TwitchChatClient struct {
 	connectedRooms []string
 	cancel context.CancelFunc
 	mu sync.RWMutex
+	reconnecting atomic.Bool //Atomic bool to make sure reconnecting doesn't have a concurrency issue
 }
 
 var Client = TwitchChatClient{}
@@ -440,6 +442,11 @@ func (c* TwitchChatClient) writeToConnection(ctx context.Context, conn *tls.Conn
 
 //Reconnects to Twitch after we've died
 func (c* TwitchChatClient) handleReconnect() {
+	if !c.reconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	defer c.reconnecting.Store(false)
+	
 	//Get connection information to reconnect
 	c.mu.Lock()
 	rooms := slices.Clone(c.connectedRooms)
