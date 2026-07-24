@@ -23,9 +23,6 @@
 - Racers are automatically whitelisted
 
 ## Racers
-### !setname [new_name]
-- Sets your name on stats stream to [new_name]
-- Still have to use Twitch name for commands
 
 ### !setgametime [sm64|smg1|sms|smg2|smo|sm3dw] [hh:mm:ss]
 - Sets your finish time for a specific game
