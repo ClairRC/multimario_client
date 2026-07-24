@@ -54,6 +54,10 @@ func (c *TwitchCredentials) ClientSecret() string {
 	return c.clientSecret
 }
 
+func (c *TwitchCredentials) SetNewUserToken(newToken string) {
+	c.userToken =  newToken
+}
+
 //Takes twitch user token and returns the login name for that account
 func GetUserNameFromToken(userToken string, clientID string) (string, error) {
 	resp, err := doGetTwitchUsersRequest("https://api.twitch.tv/helix/users", userToken, clientID)

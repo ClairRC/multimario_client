@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/multimario_client/internal/twitch"
+	"github.com/multimario_client/internal/twitch/auth"
 )
 
 type TwitchChatClient struct {
@@ -108,11 +109,85 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	fmt.Fprintf(conn, "PASS oauth:%s\r\n", c.credentials.UserToken())
 	fmt.Fprintf(conn, "NICK %s\r\n", userName)
 
+	//Read the response to make sure we're connected
+	scanner := bufio.NewScanner(conn)
+
+	//First message is an ACK
+	scanner.Scan()
+
+	//Make sure we didn't get an error
+	if err := scanner.Err(); err != nil {
+		c.mu.Lock()
+		if c.conn == conn {
+			c.conn = nil
+			c.writeChannel = nil
+			c.cancel = nil
+		}
+		c.mu.Unlock()
+		cancel()
+		conn.Close()
+		return err
+	}
+
+	if line := scanner.Text(); !strings.HasPrefix(line, ":tmi.twitch.tv CAP * ACK") {
+		err := fmt.Errorf("Twitch failed to return ACK. Got %s", line)
+		log(err.Error())
+		c.mu.Lock()
+		if c.conn == conn {
+			c.conn = nil
+			c.writeChannel = nil
+			c.cancel = nil
+		}
+		c.mu.Unlock()
+		cancel()
+		conn.Close()
+		return err
+	}
+	
+	//Twitch sends 7 messages with specific prefixes
+	expected := []string{":tmi.twitch.tv 001", ":tmi.twitch.tv 002", ":tmi.twitch.tv 003",
+		":tmi.twitch.tv 004", ":tmi.twitch.tv 375", ":tmi.twitch.tv 372", ":tmi.twitch.tv 376",
+	}
+
+	for _, pref := range expected {
+		scanner.Scan()
+
+		//Make sure we don't have an error
+		if err := scanner.Err(); err != nil {
+			log(err.Error())
+			c.mu.Lock()
+			if c.conn == conn {
+				c.conn = nil
+				c.writeChannel = nil
+				c.cancel = nil
+			}
+			c.mu.Unlock()
+			cancel()
+			conn.Close()
+			return err
+		}
+
+		if line := scanner.Text(); !strings.HasPrefix(line, pref) {
+			err := fmt.Errorf("Twitch returned an unexpected result while connecting.\nExpected: %s\nGot:%s", pref, line)
+			log(err.Error())
+			c.mu.Lock()
+			if c.conn == conn {
+				c.conn = nil
+				c.writeChannel = nil
+				c.cancel = nil
+			}
+			c.mu.Unlock()
+			cancel()
+			conn.Close()
+			return err
+		}
+	}
+
+	//Connect to chats
 	//Add logic to make sure we are added to our own twitch chat
 	var selfAdded = false
 
 	for _, name := range targetRooms {
-		//TODO: Add a check to make sure that this doesn't fail silently.
 		if name == userName {
 			selfAdded = true
 		}
@@ -132,20 +207,19 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	initCommands()
 
 	//After connecting, listen on this connection and return from this goroutine
-	go c.ListenToChat(ctx, conn, writeChannel, log)
+	go c.ListenToChat(ctx, conn, scanner, writeChannel, log)
 
 	return nil
 }
 
 //Listens to Twitch chat and creates a channel for writing
-func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, writeChannel chan(string), log func(string)) {
+func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, connScanner *bufio.Scanner, writeChannel chan(string), log func(string)) {
 	log("Listening to Twitch chat...")
 
 	go c.writeToConnection(ctx, conn, writeChannel)
 
-	//Create scanner for listening
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
+	//Read scanner for new lines
+	for connScanner.Scan() {
 		//Check if this connection is still current before reading from it
 		select {
 		case <-ctx.Done():
@@ -153,7 +227,7 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, wri
 		default:
 		}
 		//Get message from Twitch chat
-		line := scanner.Text()
+		line := connScanner.Text()
 
 		//If we get no reads after 7 minutes, assume a timeout
 		conn.SetReadDeadline(time.Now().Add(7 * time.Minute))
@@ -168,7 +242,7 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, wri
 	default:
 	}
 
-	err := scanner.Err()
+	err := connScanner.Err()
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			log("Twitch connection timed out: " + netErr.Error())
@@ -367,12 +441,22 @@ func (c* TwitchChatClient) writeToConnection(ctx context.Context, conn *tls.Conn
 //Reconnects to Twitch after we've died
 func (c* TwitchChatClient) handleReconnect() {
 	//Get connection information to reconnect
-	c.mu.RLock()
+	c.mu.Lock()
 	rooms := slices.Clone(c.connectedRooms)
 	logFunc := c.logFunc
-	c.mu.RUnlock()
 
-	err := c.ConnectToChat(rooms, logFunc)
+	//Attempt to refresh the current token before reconnecting to ensure it's current
+	newToken, err := auth.RefreshExpiredToken(c.credentials.ClientID(), c.credentials.ClientSecret())
+	if err != nil {
+		c.mu.Unlock()
+		c.logFunc(fmt.Sprintf("Unable to reconnect to Twitch: %s\nConnection will be closed.", err.Error()))
+		return
+	}
+
+	c.credentials.SetNewUserToken(newToken)
+	c.mu.Unlock()
+
+	err = c.ConnectToChat(rooms, logFunc)
 
 	maxReconnects := 10
 	for i := 0; err != nil && i < maxReconnects; i++ {

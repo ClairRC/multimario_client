@@ -28,8 +28,7 @@ func connectToTwitchChat() error {
 		return err
 	}
 
-	chat.Client.ConnectToChat(twitchChannels, logMessage)
-	return nil
+	return chat.Client.ConnectToChat(twitchChannels, logMessage)
 }
 
 //Disconnects from twitch
