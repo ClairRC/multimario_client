@@ -23,6 +23,45 @@ var cmdLogPath = "./commands.log"
 var maxLogSize = 1000
 var logMu sync.RWMutex
 
+func commandShowPlacement(args []string, sender string) string {
+	if len(args) != 1 {
+		return ""
+	}
+
+	//Convert this argument to an int
+	placement, err := strconv.Atoi(args[0])
+	if err != nil {
+		return fmt.Sprintf("Unable to parse %s as a number.", args[0])
+	}
+
+	//Get players at this placement
+	players, err := store.Race.GetPlayersAtPlacement(placement)
+	if err != nil {
+		return err.Error()
+	}
+
+	maxPlayerCount := 5
+	if len(players) == 0 {
+		return fmt.Sprintf("No players in place %v", placement)
+	}
+
+	outMsg := fmt.Sprintf("Players in place #%v: ", placement)
+	for i, p := range players {
+		if i >= maxPlayerCount {
+			outMsg += "... (Too many players to list)."
+			break
+		}
+
+		if i == 0 {
+			outMsg += p
+		} else {
+			outMsg += fmt.Sprintf(", %s", p)
+		}
+	}
+
+	return outMsg
+}
+
 //Removes a user from the whitelist
 func commandUnwhitelistUser(args []string, sender string) string {
 	//Only organizers can unwhitelist people
@@ -726,4 +765,5 @@ func initCommands() {
 	chatCommands["!unblacklist"] = commandUnblacklistUser
 	chatCommands["!whitelist"] = commandWhitelistUser
 	chatCommands["!unwhitelist"] = commandUnwhitelistUser
+	chatCommands["!place"] = commandShowPlacement
 }

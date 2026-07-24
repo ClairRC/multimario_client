@@ -8,6 +8,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +21,8 @@ type TwitchChatClient struct {
 	credentials *twitch.TwitchCredentials
 	conn *tls.Conn
 	writeChannel chan(string)
+	logFunc func(string)
+	connectedRooms []string
 	cancel context.CancelFunc
 	mu sync.RWMutex
 }
@@ -37,7 +41,7 @@ func (c *TwitchChatClient) IsConnectedToTwitch() bool {
 }
 
 //Connects to Twitch IRC and joins channel rooms. Returns TLS connection to Twitch IRC channel
-func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string)) {
+func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string)) error {
 	/*
 	* TODO: It is probably beneficial to at some point migrate to twitch's EventSub API for chat interfacing rather than IRC
 	* It might be worth it to wrap this function in some other function so that the architecture doesn't entirely
@@ -51,6 +55,8 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	}
 	if c.conn != nil {
 		c.conn.Close()
+		c.conn = nil
+		c.writeChannel = nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
@@ -61,15 +67,14 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	if err != nil {
 		log(err.Error())
 		c.mu.Lock()
-		if c.conn == conn {
+		if c.conn == nil {
 			cancel()
 			c.conn = nil
 			c.writeChannel = nil
 			c.cancel = nil
 		}
 		c.mu.Unlock()
-		conn.Close()
-		return
+		return err
 	}
 
 	//Create write channel for this connection
@@ -81,19 +86,21 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	case <-ctx.Done():
 		c.mu.Unlock()
 		conn.Close()
-		return //Return because a newer connection is present
+		return errors.New("newer connection is present")//Return because a newer connection is present
 	default:
 	}
 
 	c.conn = conn
 	c.writeChannel = writeChannel
+	c.connectedRooms = targetRooms
+	c.logFunc = log
 	c.mu.Unlock()
 
 	//Get Twitch name from user token
 	userName, err := twitch.GetUserNameFromToken(c.credentials.UserToken(), c.credentials.ClientID())
 	if err != nil {
 		log(err.Error())
-		return
+		return err
 	}
 
 	//Write to this connection
@@ -126,6 +133,8 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 
 	//After connecting, listen on this connection and return from this goroutine
 	go c.ListenToChat(ctx, conn, writeChannel, log)
+
+	return nil
 }
 
 //Listens to Twitch chat and creates a channel for writing
@@ -146,9 +155,32 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, wri
 		//Get message from Twitch chat
 		line := scanner.Text()
 
+		//If we get no reads after 7 minutes, assume a timeout
+		conn.SetReadDeadline(time.Now().Add(7 * time.Minute))
+
 		//Parse Twitch line in a new goroutine
 		go c.ParseLine(line, conn, writeChannel)
 	}
+
+	select {
+	case <-ctx.Done(): //Closed manually, no problem
+		return
+	default:
+	}
+
+	err := scanner.Err()
+	if err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			log("Twitch connection timed out: " + netErr.Error())
+		} else {
+			log("Twitch connection read error: " + err.Error())
+		}
+	} else {
+		log("Twitch connection closed.")
+	}
+
+	//Attempt to reconnect
+	go c.handleReconnect()
 }
 
 //Disconnects from twitch chat
@@ -186,7 +218,21 @@ func (c *TwitchChatClient) ConnectToUser(twitchRoom string) error {
 	//Attempt to write to channel if it's open, otherwise return
 	select {
 	case writeCh <- fmt.Sprintf("JOIN #%s", strings.ToLower(twitchRoom)):
+		
 		time.Sleep(500 * time.Millisecond) //Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
+	
+		//Check again that this conection isn't stale and write back the new rooms slic 
+		c.mu.Lock()
+		if c.conn == nil {
+			c.mu.Unlock()
+			return errors.New("bot not currently connected to twitch")
+		}
+
+		if !slices.Contains(c.connectedRooms, twitchRoom) {
+			c.connectedRooms = append(c.connectedRooms, twitchRoom)
+		}
+		c.mu.Unlock()
+
 		return nil
 	default: 
 		return errors.New("not connected, or too many messages pending")
@@ -207,6 +253,26 @@ func (c *TwitchChatClient) DisconnectFromUser(twitchRoom string) error {
 	case writeCh <- fmt.Sprintf("PART #%s", strings.ToLower(twitchRoom)):
 		//Sleep for half a second to prevent rate limiting. Twitch allows 20 join attempts per 10 seconds
 		time.Sleep(500 * time.Millisecond)
+
+		//Remove this usre from the connected rooms channel
+		c.mu.Lock()
+		if c.conn == nil {
+			c.mu.Unlock()
+			return errors.New("bot not currently connected to twitch")
+		}
+
+		if slices.Contains(c.connectedRooms, twitchRoom) {
+			for i, v := range c.connectedRooms {
+				if v == twitchRoom {
+					c.connectedRooms[i] = c.connectedRooms[len(c.connectedRooms)-1]
+					c.connectedRooms[len(c.connectedRooms)-1] = v
+					c.connectedRooms = c.connectedRooms[:len(c.connectedRooms)-1]
+					break
+				}
+			}
+		}
+		c.mu.Unlock()
+
 		return nil
 	default:
 		return errors.New("not connected, or too many messages pending")
@@ -218,6 +284,13 @@ func (c *TwitchChatClient) ParseLine(line string, conn *tls.Conn, writeChannel c
 	//If this is a PING, PONG back
 	if strings.HasPrefix(line, "PING") {
 		c.writePONG(conn, line)
+		return
+	} 
+
+	//Twitch is shutting down our connection and we need to reconnect
+	if strings.HasPrefix(line, ":tmi.twitch.tv RECONNECT") {
+		fmt.Printf("Twitch terminated this connection: %s. Reconnecting...", line)
+		c.handleReconnect()
 		return
 	} 
 
@@ -288,6 +361,31 @@ func (c* TwitchChatClient) writeToConnection(ctx context.Context, conn *tls.Conn
 			fmt.Fprintf(conn, "%s\r\n", out)
 			c.mu.Unlock()
 		}
+	}
+}
+
+//Reconnects to Twitch after we've died
+func (c* TwitchChatClient) handleReconnect() {
+	//Get connection information to reconnect
+	c.mu.RLock()
+	rooms := slices.Clone(c.connectedRooms)
+	logFunc := c.logFunc
+	c.mu.RUnlock()
+
+	err := c.ConnectToChat(rooms, logFunc)
+
+	maxReconnects := 10
+	for i := 0; err != nil && i < maxReconnects; i++ {
+		//Wait 30 seconds before retrying
+		c.logFunc(fmt.Sprintf("Unable to reconnect to Twitch: %s. Trying again...", err.Error()))
+		time.Sleep(30 * time.Second)
+		err = c.ConnectToChat(rooms, logFunc)
+	}
+
+	if err != nil {
+		c.logFunc(fmt.Sprintf("Can't reconnect to Twitch: %s.", err.Error()))
+	} else {
+		c.logFunc("Reconnection successful.")
 	}
 }
 

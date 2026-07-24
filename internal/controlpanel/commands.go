@@ -141,12 +141,11 @@ func showLog(raceID int, args []string) (string, error) {
 	}
 
 	//Output logs
-	logMessage("Logs: ")
-	startingIndex := max(len(logs) - numLogs, 0)
 
-	for i := startingIndex; i < len(logs); i++ {
-		logMessage(logs[i])
-	}
+	startingIndex := max(len(logs) - numLogs, 0)
+	recentLogs := logs[startingIndex:]
+
+	logMessage("Logs:\n" + strings.Join(recentLogs, "\n"))
 
 	return "", nil
 }

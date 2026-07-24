@@ -3,6 +3,7 @@ package controlpanel
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/pkg/browser"
@@ -95,9 +96,18 @@ func logMessage(message string) {
 	}
 	eventsMu.RUnlock()
 
+	//Prefix every line with "data: "
+	lines := strings.Split(message, "\n")
+	dataLines := make([]string, len(lines))
+	for i, l := range lines {
+		dataLines[i] = "data: " + l
+	}
+
+	payload := fmt.Sprintf("event: log\n%s", strings.Join(dataLines, "\n"))
+
 	for _, logC := range channels {
 		select {
-		case logC <- fmt.Sprintf("event: log\ndata: %s", message):
+		case logC <- payload:
 		default:
 		}
 	}

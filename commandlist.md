@@ -3,6 +3,11 @@
 ### !mmhelp
 - Sends the link to the command list
 
+### !place [placement_number]
+- Shows the players in place #[placement_number]
+- Shows a max of 5 players
+- Currently, if there are multiple players, they are listed in no particular order.
+
 ## Racers and Counters
 ### !add [twitch_name] [amount]
 - Adds [amount] to [twitch_name]'s score

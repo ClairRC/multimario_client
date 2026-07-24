@@ -1182,6 +1182,42 @@ func (s *store) GetPlayerPlacement(playerTwitch string) (string, error) {
 	return out, nil
 }
 
+//Gets the players at the given placement
+func (s *store) GetPlayersAtPlacement(placement int) ([]string, error) {
+	//Copy the player map for sorting
+	s.mu.RLock()
+	playersSlice := slices.Collect(maps.Values(s.state.Players))
+	catName := s.info.Category
+	raceID := s.state.RaceID
+	s.mu.RUnlock()
+
+	//Sort the players slice
+	slices.SortFunc(playersSlice, func(a, b *PlayerInfo) int {
+		return playerRankingSortingFunc(a, b, catName)
+	})
+	
+	//Get placement map
+	placementMap := getPlayerPlacementMap(playersSlice, catName)
+
+	//Finally, make sure race is the same and player is still in the race
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if catName != s.info.Category || raceID != s.state.RaceID {
+		return nil, errors.New("Can't get player placement, race state has changed")
+	}
+
+	//Get players with this rank. O(n) but nobody uses this command and its 3am idc
+	out := make([]string, 0)
+	for name, rank := range placementMap {
+		if rank == placement {
+			out = append(out, name)
+		}
+	}
+
+	return out, nil
+}
+
 //Returns a copy of the current organizer list
 func (s *store) GetOrganizerList() map[string]bool {
 	organizerMu.RLock()
@@ -1538,8 +1574,12 @@ func playerRankingSortingFunc(a *PlayerInfo, b *PlayerInfo, category string) int
 	if aFinished && bFinished {
 		res := cmp.Compare(a.FinalTime, b.FinalTime)
 		if res == 0 {
+			res = cmp.Compare(a.Estimate, b.Estimate)
+		}
+		if res == 0 {
 			res = cmp.Compare(a.PlayerTwitch, b.PlayerTwitch)
 		}
+
 		return res
 	}
 
@@ -1571,6 +1611,9 @@ func playerRankingSortingFunc(a *PlayerInfo, b *PlayerInfo, category string) int
 	res := cmp.Compare(b.NumCollected, a.NumCollected)
 	if res == 0 {
 		res = cmp.Compare(a.FinalTime, b.FinalTime)
+	}
+	if res == 0 {
+		res = cmp.Compare(a.Estimate, b.Estimate)
 	}
 	if res == 0 {
 		res = cmp.Compare(a.PlayerTwitch, b.PlayerTwitch)
