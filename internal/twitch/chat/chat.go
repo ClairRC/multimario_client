@@ -29,7 +29,7 @@ type TwitchChatClient struct {
 	mu sync.RWMutex
 	reconnecting atomic.Bool //Atomic bool to make sure reconnecting doesn't have a concurrency issue
 }
-
+const reconnectTimeout = (7 * time.Minute)
 var Client = TwitchChatClient{}
 
 func (c *TwitchChatClient) SetTwitchConnectionParams(params *twitch.TwitchCredentials) {
@@ -208,6 +208,9 @@ func (c *TwitchChatClient) ConnectToChat(targetRooms []string, log func(string))
 	//Register chat commands
 	initCommands()
 
+	//If we get no reads after 7 minutes, assume a timeout
+	conn.SetReadDeadline(time.Now().Add(reconnectTimeout))
+	
 	//After connecting, listen on this connection and return from this goroutine
 	go c.ListenToChat(ctx, conn, scanner, writeChannel, log)
 
@@ -231,8 +234,7 @@ func (c *TwitchChatClient) ListenToChat(ctx context.Context, conn *tls.Conn, con
 		//Get message from Twitch chat
 		line := connScanner.Text()
 
-		//If we get no reads after 7 minutes, assume a timeout
-		conn.SetReadDeadline(time.Now().Add(7 * time.Minute))
+		conn.SetReadDeadline(time.Now().Add(reconnectTimeout))
 
 		//Parse Twitch line in a new goroutine
 		go c.ParseLine(line, conn, writeChannel)
@@ -448,25 +450,26 @@ func (c* TwitchChatClient) handleReconnect() {
 	defer c.reconnecting.Store(false)
 	
 	//Get connection information to reconnect
-	c.mu.Lock()
+	c.mu.RLock()
 	rooms := slices.Clone(c.connectedRooms)
 	logFunc := c.logFunc
+	c.mu.RUnlock()
 
-	//Attempt to refresh the current token before reconnecting to ensure it's current
-	newToken, err := auth.RefreshExpiredToken(c.credentials.ClientID(), c.credentials.ClientSecret())
-	if err != nil {
-		c.mu.Unlock()
-		c.logFunc(fmt.Sprintf("Unable to reconnect to Twitch: %s\nConnection will be closed.", err.Error()))
-		return
-	}
-
-	c.credentials.SetNewUserToken(newToken)
-	c.mu.Unlock()
-
-	err = c.ConnectToChat(rooms, logFunc)
+	err := c.ConnectToChat(rooms, logFunc)
 
 	maxReconnects := 10
 	for i := 0; err != nil && i < maxReconnects; i++ {
+		//Attempt to refresh the current token before reconnecting to ensure it's current
+		newToken, refreshErr := auth.RefreshExpiredToken(c.credentials.ClientID(), c.credentials.ClientSecret())
+		if refreshErr != nil {
+			c.logFunc(fmt.Sprintf("Unable to refresh token: %s\nTrying again...", refreshErr.Error()))
+			time.Sleep(30 * time.Second)
+			continue
+		}
+		c.mu.Lock()
+		c.credentials.SetNewUserToken(newToken)
+		c.mu.Unlock()
+
 		//Wait 30 seconds before retrying
 		c.logFunc(fmt.Sprintf("Unable to reconnect to Twitch: %s. Trying again...", err.Error()))
 		time.Sleep(30 * time.Second)

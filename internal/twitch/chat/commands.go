@@ -648,6 +648,12 @@ func executeCommand(command string, sender string) string {
 	}
 
 	args := strings.Split(command, " ")
+
+	//Trim whitespace from args
+	for i, arg := range args {
+		args[i] = strings.TrimSpace(arg)
+	}
+
 	comm := strings.ToLower(args[0])
 
 	if chatCommands[comm] == nil {
