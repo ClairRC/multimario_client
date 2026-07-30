@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	categoryinfo "github.com/multimario_client/internal/category_info"
 	"github.com/multimario_client/internal/store"
@@ -649,10 +650,8 @@ func executeCommand(command string, sender string) string {
 
 	args := strings.Split(command, " ")
 
-	//Trim whitespace from args
-	for i, arg := range args {
-		args[i] = strings.TrimSpace(arg)
-	}
+	//Make sure the final command is stripped since some Twitch extensions add whitespace for repeat messages
+	args[len(args)-1] = trimInvisible(args[len(args)-1])
 
 	comm := strings.ToLower(args[0])
 
@@ -772,4 +771,13 @@ func initCommands() {
 	chatCommands["!whitelist"] = commandWhitelistUser
 	chatCommands["!unwhitelist"] = commandUnwhitelistUser
 	chatCommands["!place"] = commandShowPlacement
+}
+
+//Helper to trim all the garbage useless character Twitch extensions add
+func trimInvisible(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return unicode.IsSpace(r) ||
+			unicode.Is(unicode.Mn, r) ||
+			unicode.Is(unicode.Cf, r)
+	})
 }
