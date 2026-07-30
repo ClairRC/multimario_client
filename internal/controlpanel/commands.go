@@ -19,12 +19,13 @@ func showSchedule(raceID int, args []string) (string, error) {
 }
 
 func testOBSConnection(raceID int, args []string) (string, error) {
-	if len(args) != 0 {
-		return "", errors.New("This command takes no arguments.")
+	_, err := validateArgs(args, 0, 0)
+	if err != nil {
+		return "", err
 	}
 
 	//Attempt connection
-	err := obs.ConnectToOBS()
+	err = obs.ConnectToOBS()
 	defer obs.DisconnectFromOBS()
 	if err != nil {
 		return "", err
@@ -34,11 +35,12 @@ func testOBSConnection(raceID int, args []string) (string, error) {
 }
 
 func removeScheduledRaceLimit(raceID int, args []string) (string, error) {
-	if len(args) != 0 {
-		return "", errors.New("This command takes no arguments")
+	_, err := validateArgs(args, 0, 0)
+	if err != nil {
+		return "", err
 	}
 
-	err := Schedule.UpdateRaceTimeLimit("")
+	err = Schedule.UpdateRaceTimeLimit("")
 	if err != nil {
 		return "", err
 	}
@@ -47,15 +49,12 @@ func removeScheduledRaceLimit(raceID int, args []string) (string, error) {
 }
 
 func updateScheduledRaceLimit(raceID int, args []string) (string, error) {
-	if len(args) > 1 {
-		return "", errors.New("Too many arguments")
+	_, err := validateArgs(args, 1, 1)
+	if err != nil {
+		return "", err
 	}
 
-	if len(args) < 1 {
-		return "", errors.New("Too few arguments")
-	}
-
-	err := Schedule.UpdateRaceTimeLimit(args[0])
+	err = Schedule.UpdateRaceTimeLimit(args[0])
 	if err != nil {
 		return "", err
 	}
@@ -64,15 +63,12 @@ func updateScheduledRaceLimit(raceID int, args []string) (string, error) {
 }
 
 func updateScheduledRaceStart(raceID int, args []string) (string, error) {
-	if len(args) > 1 {
-		return "", errors.New("Too many arguments")
+	_, err := validateArgs(args, 1, 1)
+	if err != nil {
+		return "", err
 	}
 
-	if len(args) < 1 {
-		return "", errors.New("Too few arguments")
-	}
-
-	err := Schedule.UpdateStartTime(args[0])
+	err = Schedule.UpdateStartTime(args[0])
 	if err != nil {
 		return "", err
 	}
@@ -94,11 +90,9 @@ func resetRaceSchedule(raceID int, args []string) (string, error) {
 }
 
 func setRaceSchedule(raceID int, args []string) (string, error) {
-	if len(args) > 2 {
-		return "", errors.New("Too many arguments")
-	}
-	if len(args) < 1 {
-		return "", errors.New("Not enough arguments")
+	numArgs, err := validateArgs(args, 1, 2)
+	if err != nil {
+		return "", err
 	}
 
 	if raceID < 0 {
@@ -108,11 +102,11 @@ func setRaceSchedule(raceID int, args []string) (string, error) {
 	//Get values
 	startTime := args[0]
 	limit := ""
-	if len(args) == 2 {
+	if numArgs == 2 {
 		limit = args[1]
 	}
 
-	err := Schedule.ScheduleRace(raceID, startTime, limit)
+	err = Schedule.ScheduleRace(raceID, startTime, limit)
 	if err != nil {
 		return "", err
 	}
@@ -121,12 +115,13 @@ func setRaceSchedule(raceID int, args []string) (string, error) {
 }
 
 func showLog(raceID int, args []string) (string, error) {
-	if len(args) > 2 {
-		return "", errors.New("Too many arguments")
+	lenArgs, err := validateArgs(args, 0, 1)
+	if err != nil {
+		return "", err
 	}
 
 	numLogs := 100
-	if len(args) == 1 {
+	if lenArgs == 1 {
 		localNumLogs, err := strconv.Atoi(args[0])
 		if err != nil {
 			return "", fmt.Errorf("Unable to parse %s as a number", args[0])
@@ -141,8 +136,7 @@ func showLog(raceID int, args []string) (string, error) {
 	}
 
 	//Output logs
-
-	startingIndex := max(len(logs) - numLogs, 0)
+	startingIndex := max(lenArgs - numLogs, 0)
 	recentLogs := logs[startingIndex:]
 
 	logMessage("Logs:\n" + strings.Join(recentLogs, "\n"))
@@ -151,12 +145,9 @@ func showLog(raceID int, args []string) (string, error) {
 }
 
 func removeOrganizer(raceID int, args []string) (string, error) {
-	if len(args) > 1 {
-		return "", errors.New("Too many arguments")
-	}
-
-	if len(args) < 1 {
-		return "", errors.New("Too few arguments")
+	_, err := validateArgs(args, 1, 1)
+	if err != nil {
+		return "", err
 	}
 
 	store.RemoveOrganizer(args[0])
@@ -201,7 +192,7 @@ func exportTimes(raceID int, args []string) (string, error) {
 	return "Times have been exported", nil
 }
 
-//Takes a command and a log channel and executes it
+//Takes a command and executes it
 func handleCommand(raceID int, command string) error {
 	args := strings.Split(command, " ")
 	comm := args[0]
@@ -235,6 +226,27 @@ func handleCommand(raceID int, command string) error {
 func beginSelectedRace(raceID int, args []string) (string, error) {
 	startRace()
 	return "", nil
+}
+
+//Helper function to validate args. Returns number of arguments or error if argument count is invalid
+func validateArgs(argList []string, minArgs int, maxArgs int) (int, error) {
+	if minArgs == maxArgs {
+		if len(argList) != minArgs {
+			return -1, fmt.Errorf("This command accepts %v arguments.", minArgs)
+		} else {
+			return len(argList), nil
+		}
+	}
+
+	if len(argList) < minArgs {
+		return -1, fmt.Errorf("Too few arguments: Command accepts a minimum of %v arguments.", minArgs)
+	}
+
+	if len(argList) > maxArgs {
+		return -1, fmt.Errorf("Too many arguments: Command accepts a maximum of %v arguments.", maxArgs)
+	}
+
+	return len(argList), nil
 }
 
 func initCommands() {

@@ -3,8 +3,6 @@ package controlpanel
 import (
 	"fmt"
 	"net/http"
-	"strings"
-	"sync"
 
 	"github.com/pkg/browser"
 )
@@ -15,10 +13,6 @@ import (
 //run remotely, this can change
 var ip = "0.0.0.0"
 var port = ":8081"
-
-var eventsMu sync.RWMutex
-var globalID uint64 = 0
-var eventChannels = make(map[uint64]chan(string), 0)
 
 func InitControlPanel() {
 	//Register commands
@@ -59,74 +53,5 @@ func sendUpdateMiddleware(handler func(w http.ResponseWriter, r *http.Request)) 
 	return func(w http.ResponseWriter, r *http.Request) {
 		handler(w, r)
 		updateControlPanel()
-	}
-}
-
-//Register log channel. Returns unique ID for this SSE connection
-func registerSSEConnection() (uint64, chan(string)) {
-	eventsMu.Lock()
-	//Get channel and new ID
-	newEventChannel := make(chan(string), 16)
-	newID := globalID
-	globalID++
-
-	//Add to map
-	eventChannels[newID] = newEventChannel
-	eventsMu.Unlock()
-
-	go updateControlPanel() //Update the UI for new connection
-	return newID, newEventChannel
-}
-
-func unregisterSSEConnection(id uint64) {
-	eventsMu.Lock()
-	//Remove this channel from the map
-	delete(eventChannels, id)
-	eventsMu.Unlock()
-}
-
-//Sends message to control panel via SSE endpoint
-func logMessage(message string) {
-	eventsMu.RLock()
-	channels := make([]chan(string), 0)
-	for _, v := range eventChannels {
-		if v != nil {
-			channels = append(channels, v)
-		}
-	}
-	eventsMu.RUnlock()
-
-	//Prefix every line with "data: "
-	lines := strings.Split(message, "\n")
-	dataLines := make([]string, len(lines))
-	for i, l := range lines {
-		dataLines[i] = "data: " + l
-	}
-
-	payload := fmt.Sprintf("event: log\n%s", strings.Join(dataLines, "\n"))
-
-	for _, logC := range channels {
-		select {
-		case logC <- payload:
-		default:
-		}
-	}
-} 
-
-func updateControlPanel() {
-	eventsMu.RLock()
-	channels := make([]chan(string), 0)
-	for _, v := range eventChannels {
-		if v != nil {
-			channels = append(channels, v)
-		}
-	}
-	eventsMu.RUnlock()
-
-	for _, logC := range channels {
-		select {
-		case logC <- "event: update\ndata:!":
-		default:
-		}
 	}
 }

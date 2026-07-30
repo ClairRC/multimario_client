@@ -32,7 +32,7 @@ type raceSchedule struct {
 
 const NoTimeLimit time.Duration = 0
 const streamStartOffset = time.Duration(30 * time.Minute)
-const streamEndOffset = time.Duration(30 * time.Minute)
+const streamEndOffset = time.Duration(2 * time.Minute)
 
 var Schedule = raceSchedule{}
 var cacheMu sync.RWMutex

@@ -4,6 +4,8 @@ import "strings"
 
 //This package just has useful functions for getting certain category-specific information
 
+//TODO: Derive this info from the backend instead of hardcoding
+
 type GameCategory struct {
 	GameName string
 	Name string
