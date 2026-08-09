@@ -16,7 +16,7 @@ var updateText = {}
 
 //Durations (ms) for how long to STAY on each page before turning, indexed by page number.
 //Page 0 (first, top-ranked) stays up longest; falls back to lastDuration for any page beyond this list.
-const pageDurations = [30000, 20000, 15000] // 30s, 20s, 15s
+const pageDurations = [5000, 5000, 5000] // 30s, 20s, 15s
 const fallbackPageDuration = 10000 // any page beyond the list above uses this
 var pageInterval = null
 var pageNum = 0
@@ -218,9 +218,8 @@ function updatePlayerCards() {
             targetContainer.appendChild(card);
         }
 
-        // Only the current page + the immediate next page should take up space.
-        // Anything further out is just waiting its turn — keep it out of the layout.
-        card.style.display = (i < nextPageEnd) ? "" : "none"
+        var isVisible = i < nextPageEnd
+        card.style.display = isVisible ? "" : "none"
 
         if (record.isPlaceHolder) {
             return
@@ -230,7 +229,10 @@ function updatePlayerCards() {
         player.updateCardImages(record.twitch_name, record.num_collected, currentRaceCategory, record.status)
         player.updatePlayerProgress(record.twitch_name, record.num_collected, currentRaceCategory, record.status, record.time)
 
-        if (updateText[record.twitch_name]) {
+        // Don't measure text on a display:none card — scrollWidth/clientWidth
+        // both read 0 there and fitText picks a bogus size. Leave the flag set
+        // so it gets fixed once this card is actually paged into view.
+        if (updateText[record.twitch_name] && isVisible) {
             fixCardTextSizing(card)
             updateText[record.twitch_name] = false
         }
