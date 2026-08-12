@@ -628,7 +628,7 @@ func isCommand(line string) bool {
 	if len(msg) == 0 {
 		return false //Shouldn't happen but would rather not panic
 	}
-	cmd := msg[0]
+	cmd := strings.ToLower(trimInvisible(msg[0]))
 	if chatCommands[cmd] != nil {
 		return true
 	}
@@ -648,11 +648,14 @@ func executeCommand(command string, sender string) string {
 		return ""
 	}
 
+	command = trimInvisible(command)
 	args := strings.Split(command, " ")
 
-	//Make sure the final command is stripped since some Twitch extensions add whitespace for repeat messages
-	args[len(args)-1] = trimInvisible(args[len(args)-1])
+	if len(args) == 0 {
+		return ""
+	}
 
+	//Strip command of whitespace at the start and end
 	comm := strings.ToLower(args[0])
 
 	if chatCommands[comm] == nil {
