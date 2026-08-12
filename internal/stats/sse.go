@@ -12,7 +12,7 @@ import (
 
 //Functions for handling SSE to the stats page
 
-//Function to set up channels for communication. Takes the channel that is used for writing to event stream.
+//Function to set up channels for communication.
 func initSSE(w http.ResponseWriter, r *http.Request) {
 	//Set headers
 	w.Header().Set("Content-Type", "text/event-stream")
