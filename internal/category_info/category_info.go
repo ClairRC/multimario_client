@@ -27,11 +27,11 @@ var smo_all_moons GameCategory = GameCategory{"SMO", "smo_all_moons", 880, "Moon
 var sm3dw_380 GameCategory = GameCategory{"SM3DW", "sm3dw_380", 380, "Green Stars"}
 
 var sm64_70 GameCategory = GameCategory{"SM64", "sm64_70", 70, "Stars"}
-var smg1_any GameCategory = GameCategory{"SMG1", "smg1_any", 61, "Stars"}
-var sms_any GameCategory = GameCategory{"SMS", "sms_any", 44, "Shines"}
-var smg2_any GameCategory = GameCategory{"SMG2", "smg2_any", 71, "Stars"}
-var smo_any GameCategory = GameCategory{"SMO", "smo_any", 124, "Moons"}
-var sm3dw_any GameCategory = GameCategory{"SM3DW", "sm3dw_any", 170, "Green Stars"}
+var smg1_any GameCategory = GameCategory{"SMG1", "smg1_any%", 61, "Stars"}
+var sms_any GameCategory = GameCategory{"SMS", "sms_any%", 44, "Shines"}
+var smg2_any GameCategory = GameCategory{"SMG2", "smg2_any%", 71, "Stars"}
+var smo_any GameCategory = GameCategory{"SMO", "smo_any%", 124, "Moons"}
+var sm3dw_any GameCategory = GameCategory{"SM3DW", "sm3dw_any%", 170, "Green Stars"}
 
 var categories = map[string]Category {
 	"602": {"602", 602, []GameCategory{sm64_120, smg1_120, sms_120, smg2_242}},
