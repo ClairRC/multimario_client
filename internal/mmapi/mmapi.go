@@ -500,7 +500,7 @@ func IncrementPlayerCount(raceID int, playerName string, numToAdd int) (int, err
 	}
 
 	//Get Request
-	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), url.PathEscape(playerName))
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return -1, err
@@ -559,7 +559,7 @@ func SetPlayerCount(raceID int, playerName string, newNum int) (int, error) {
 	}
 
 	//Get Request
-	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), url.PathEscape(playerName))
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return -1, err
@@ -617,7 +617,7 @@ func UpdatePlayerName(currentName string, newName string) error {
 	}
 
 	//Get Request
-	endpoint := fmt.Sprintf("%s/players/%s", ip+port, currentName)
+	endpoint := fmt.Sprintf("%s/players/%s", ip+port, url.PathEscape(currentName))
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return err
@@ -670,7 +670,7 @@ func UpdatePlayerCategoryTime(raceID int, playerName string, categoryName string
 
 	//Get Request
 	raceIDStr := strconv.Itoa(raceID)
-	endpoint := fmt.Sprintf("%s/records/%s/%s/runs/%s", ip+port, raceIDStr, playerName, categoryName)
+	endpoint := fmt.Sprintf("%s/records/%s/%s/runs/%s", ip+port, raceIDStr, url.PathEscape(playerName), url.PathEscape(categoryName))
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return err
@@ -722,7 +722,7 @@ func UpdatePlayerFinalTime(raceID int, playerName string, finalTime string) erro
 	}
 
 	//Get Request
-	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), playerName)
+	endpoint := fmt.Sprintf("%s/records/%s/%s", ip+port, strconv.Itoa(raceID), url.PathEscape(playerName))
 	req, err := http.NewRequest("PATCH", endpoint, bytes.NewReader(bodyJSON))
 	if err != nil {
 		return err
